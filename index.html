@@ -1,21 +1,64 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Satellite Visualizer</title>
+<head>
+<meta charset="UTF-8" />
+<title>Satellite Visualizer</title>
 
-    <!-- Make canvas fill screen -->
-    <style>
-      body {
-        margin: 0;
-        overflow: hidden;
-        background: black;
-      }
-    </style>
-  </head>
+<link rel="stylesheet" href="/src/ui.css" />
 
-  <body>
-    <!-- Three.js will inject the canvas here -->
-    <script type="module" src="/src/main.js"></script>
-  </body>
+</head>
+
+<body>
+
+<!-- 3D canvas will still be inserted by Three.js -->
+<div id="ui-overlay">
+
+  <!-- Search Bar -->
+  <div id="search-container">
+    <input
+      id="search-input"
+      type="text"
+      placeholder="Find Russian recon satellites in LEO..."
+    />
+    <button id="search-btn">Search</button>
+  </div>
+
+  <!-- Settings Button -->
+  <button id="settings-btn">⚙ Settings</button>
+
+</div>
+
+<!-- Settings Modal -->
+<div id="settings-modal" class="hidden">
+
+  <div class="modal-content">
+
+    <h2>Claude API Key</h2>
+
+    <p>
+      Paste your Anthropic API key below.
+      It will be stored locally in your browser.
+    </p>
+
+    <input
+      id="api-key-input"
+      type="password"
+      placeholder="sk-ant-..."
+    />
+
+    <div class="modal-buttons">
+      <button id="save-key-btn">Save</button>
+      <button id="close-modal-btn">Close</button>
+    </div>
+
+  </div>
+
+</div>
+
+<script type="module" src="/src/search.js"></script>
+
+<!-- Your Three.js app -->
+<script type="module" src="/src/main.js"></script>
+
+</body>
 </html>
