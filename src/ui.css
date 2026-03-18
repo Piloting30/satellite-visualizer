@@ -1,165 +1,495 @@
+/* ============================================================
+   BASE
+   ============================================================ */
+
 body {
-    margin: 0;
-    overflow: hidden;
-    font-family: Arial, sans-serif;
+  margin: 0;
+  overflow: hidden;
+  font-family: 'Courier New', Courier, monospace;
+  background: #000;
 }
 
-/* ---------------- Overlay ---------------- */
+/* ============================================================
+   TOP OVERLAY (search + settings)
+   ============================================================ */
 
 #ui-overlay {
-    position: absolute;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    gap: 10px;
-    z-index: 10;
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+  z-index: 10;
 }
 
-/* ---------------- Search ---------------- */
+/* Search */
 
 #search-container {
-    display: flex;
-    background: rgba(0, 0, 0, 0.6);
-    border-radius: 8px;
-    padding: 5px;
+  display: flex;
+  background: rgba(0, 0, 0, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 5px;
+  backdrop-filter: blur(8px);
 }
 
 #search-input {
-    width: 350px;
-    border: none;
-    outline: none;
-    padding: 8px;
-    background: transparent;
-    color: white;
+  width: 350px;
+  border: none;
+  outline: none;
+  padding: 8px;
+  background: transparent;
+  color: #e0e8ff;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+#search-input::placeholder {
+  color: rgba(180, 200, 255, 0.4);
 }
 
 #search-btn {
-    padding: 8px 14px;
-    border: none;
-    cursor: pointer;
-    background: #2b8cff;
-    color: white;
-    border-radius: 6px;
+  padding: 8px 14px;
+  border: none;
+  cursor: pointer;
+  background: #1a5fff;
+  color: white;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: bold;
+  letter-spacing: 0.05em;
+  transition: background 0.2s;
 }
 
-/* ---------------- Settings Button ---------------- */
+#search-btn:hover {
+  background: #2b6fff;
+}
+
+/* Settings button */
 
 #settings-btn {
-    padding: 8px 12px;
-    border-radius: 6px;
-    border: none;
-    cursor: pointer;
-    background: rgba(0, 0, 0, 0.7);
-    color: white;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.65);
+  color: rgba(200, 210, 255, 0.85);
+  font-family: inherit;
+  font-size: 13px;
+  backdrop-filter: blur(8px);
+  transition: background 0.2s;
 }
 
-/* ---------------- Modal ---------------- */
+#settings-btn:hover {
+  background: rgba(30, 40, 70, 0.8);
+}
+
+/* ============================================================
+   MODAL
+   ============================================================ */
 
 #settings-modal {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-
-    background: rgba(0, 0, 0, 0.7);
-
-    display: flex;
-    justify-content: center;
-    align-items: center;
-
-    z-index: 20;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 20;
+  backdrop-filter: blur(4px);
 }
 
 .hidden {
-    display: none !important;
+  display: none !important;
 }
 
 .modal-content {
-    background: #1e1e1e;
-    padding: 25px;
-    border-radius: 10px;
-    width: 400px;
-    color: white;
+  background: #0d1117;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 28px 32px;
+  border-radius: 12px;
+  width: 420px;
+  color: #c9d1d9;
+  font-family: inherit;
+}
+
+.modal-content h2 {
+  margin: 0 0 12px;
+  color: #e0e8ff;
+  font-size: 16px;
+  font-weight: bold;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.modal-content p {
+  font-size: 13px;
+  color: rgba(180, 200, 255, 0.6);
+  margin-bottom: 12px;
+  line-height: 1.6;
 }
 
 .modal-content input {
-    width: 100%;
-    padding: 8px;
-    margin-top: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  margin-top: 4px;
+  background: #161b22;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #e0e8ff;
+  font-family: inherit;
+  font-size: 13px;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.modal-content input:focus {
+  border-color: #1a5fff;
 }
 
 .modal-buttons {
-    margin-top: 15px;
-    display: flex;
-    justify-content: space-between;
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
-/* Hover name tooltip */
+.modal-buttons button {
+  padding: 8px 18px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: bold;
+  letter-spacing: 0.05em;
+  transition: background 0.2s;
+}
+
+#save-key-btn {
+  background: #1a5fff;
+  color: white;
+  border-color: #1a5fff;
+}
+
+#save-key-btn:hover {
+  background: #2b6fff;
+}
+
+#close-modal-btn {
+  background: transparent;
+  color: rgba(200, 210, 255, 0.7);
+}
+
+#close-modal-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* ============================================================
+   SATELLITE CARDS
+   ============================================================ */
 
 #satellite-hover-card {
-    position: absolute;
-    background: rgba(0, 0, 0, 0.85);
-    color: white;
-    padding: 6px 10px;
-    border-radius: 6px;
-    pointer-events: none;
-    font-size: 12px;
+  position: absolute;
+  background: rgba(5, 10, 25, 0.92);
+  color: #aac4ff;
+  padding: 6px 12px;
+  border-radius: 6px;
+  pointer-events: none;
+  font-size: 11px;
+  font-family: inherit;
+  letter-spacing: 0.06em;
+  border: 1px solid rgba(80, 140, 255, 0.25);
 }
-
-/* Detail panel */
 
 #satellite-detail-card {
-    position: absolute;
-    right: 20px;
-    top: 120px;
-    width: 260px;
-
-    background: rgba(0, 0, 0, 0.9);
-    color: white;
-    padding: 15px;
-    border-radius: 8px;
-
-    z-index: 20;
+  position: absolute;
+  right: 20px;
+  top: 120px;
+  width: 260px;
+  background: rgba(5, 10, 25, 0.92);
+  color: #c9d1d9;
+  padding: 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(80, 140, 255, 0.2);
+  z-index: 20;
+  font-size: 13px;
 }
 
-/* ---------------- Loading Overlay ---------------- */
+/* ============================================================
+   LOADING OVERLAY
+   ============================================================ */
 
 #loading-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-
-    background: black;
-
-    display: flex;
-    justify-content: center;
-    align-items: center;
-
-    z-index: 50;
+  position: fixed;
+  inset: 0;
+  background: #000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 50;
 }
 
 .loading-box {
-    text-align: center;
-    color: white;
+  text-align: center;
+  color: rgba(180, 200, 255, 0.8);
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 13px;
+  letter-spacing: 0.1em;
 }
 
 .spinner {
-    width: 40px;
-    height: 40px;
-    border: 4px solid rgba(255, 255, 255, 0.2);
-    border-top: 4px solid white;
-    border-radius: 50%;
-    margin: auto;
-    margin-bottom: 10px;
-    animation: spin 1s linear infinite;
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(80, 140, 255, 0.2);
+  border-top: 3px solid #4488ff;
+  border-radius: 50%;
+  margin: 0 auto 14px;
+  animation: spin 0.9s linear infinite;
 }
 
 @keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
+  to { transform: rotate(360deg); }
+}
+
+/* ============================================================
+   TIME CONTROLS BAR
+   ============================================================ */
+
+#time-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 15;
+
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 20px;
+
+  background: rgba(4, 8, 20, 0.88);
+  border-top: 1px solid rgba(80, 140, 255, 0.18);
+  backdrop-filter: blur(12px);
+
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 12px;
+  color: rgba(160, 190, 255, 0.8);
+}
+
+/* Three columns inside the bar */
+
+.time-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.time-section--left {
+  flex: 0 0 auto;
+  min-width: 220px;
+}
+
+.time-section--center {
+  flex: 1 1 auto;
+  justify-content: center;
+  gap: 6px;
+}
+
+.time-section--right {
+  flex: 0 0 auto;
+  min-width: 220px;
+  justify-content: flex-end;
+}
+
+/* Date + clock */
+
+.time-datetime {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+#sim-date {
+  font-size: 11px;
+  color: rgba(120, 160, 255, 0.6);
+  letter-spacing: 0.08em;
+}
+
+#sim-clock {
+  font-size: 18px;
+  font-weight: bold;
+  color: #c8daff;
+  letter-spacing: 0.1em;
+}
+
+/* LIVE pill */
+
+#live-indicator {
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 0.12em;
+  background: rgba(255, 60, 60, 0.15);
+  color: rgba(255, 100, 100, 0.5);
+  border: 1px solid rgba(255, 60, 60, 0.2);
+  transition: all 0.3s;
+  white-space: nowrap;
+}
+
+#live-indicator.live {
+  background: rgba(60, 220, 100, 0.15);
+  color: #3ddc7a;
+  border-color: rgba(60, 220, 100, 0.35);
+  animation: live-pulse 2s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.65; }
+}
+
+/* Generic time button */
+
+.time-btn {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(80, 140, 255, 0.2);
+  background: rgba(20, 35, 70, 0.7);
+  color: rgba(160, 190, 255, 0.85);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.time-btn:hover {
+  background: rgba(30, 55, 110, 0.8);
+  border-color: rgba(80, 140, 255, 0.4);
+}
+
+/* Play/Pause */
+
+.time-btn--play {
+  font-size: 16px;
+  padding: 5px 14px;
+  background: rgba(26, 95, 255, 0.25);
+  border-color: rgba(26, 95, 255, 0.5);
+  color: #6aabff;
+}
+
+.time-btn--play:hover {
+  background: rgba(26, 95, 255, 0.4);
+}
+
+/* NOW */
+
+.time-btn--now {
+  background: rgba(60, 220, 100, 0.12);
+  border-color: rgba(60, 220, 100, 0.3);
+  color: #3ddc7a;
+  font-weight: bold;
+  letter-spacing: 0.06em;
+}
+
+.time-btn--now:hover {
+  background: rgba(60, 220, 100, 0.22);
+}
+
+/* UTC toggle */
+
+#utc-toggle {
+  font-size: 10px;
+  padding: 3px 8px;
+  letter-spacing: 0.1em;
+}
+
+/* Speed buttons */
+
+.speed-group {
+  display: flex;
+  gap: 3px;
+}
+
+.speed-btn {
+  padding: 4px 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(80, 140, 255, 0.15);
+  background: rgba(10, 18, 40, 0.8);
+  color: rgba(120, 160, 255, 0.6);
+  font-family: inherit;
+  font-size: 10px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  letter-spacing: 0.04em;
+}
+
+.speed-btn:hover {
+  background: rgba(30, 55, 110, 0.7);
+  color: rgba(160, 200, 255, 0.9);
+  border-color: rgba(80, 140, 255, 0.3);
+}
+
+.speed-btn.active {
+  background: rgba(26, 95, 255, 0.3);
+  border-color: rgba(80, 160, 255, 0.6);
+  color: #90c0ff;
+}
+
+/* Scrubber */
+
+#time-scrubber {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(80, 140, 255, 0.2);
+  outline: none;
+  cursor: pointer;
+  min-width: 60px;
+  max-width: 220px;
+}
+
+#time-scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #4488ff;
+  border: 2px solid #aaccff;
+  cursor: grab;
+  transition: transform 0.15s;
+}
+
+#time-scrubber::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.25);
+}
+
+#time-scrubber::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #4488ff;
+  border: 2px solid #aaccff;
+  cursor: grab;
+}
+
+/* Keyboard hints */
+
+.time-hints {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 9px;
+  color: rgba(100, 130, 200, 0.4);
+  letter-spacing: 0.04em;
+  line-height: 1.4;
 }
