@@ -1,18 +1,19 @@
 /**
- * Satellite Visualizer
- *
- * WebGPU + Three.js
- * Real satellite positions using satellite.js (SGP4)
- */
+Satellite Visualizer
+WebGPU + Real Satellite Metadata + AI Filtering
+*/
 
 import * as THREE from "three";
 import { WebGPURenderer } from "three/webgpu";
-// import { WebGPURenderer } from "three/addons/renderers/WebGPURenderer.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+
 import * as satellite from "satellite.js";
+import Papa from "papaparse";
+
+import { currentFilter } from "./search.js";
 
 /* --------------------------------------------------
-   Fetch TLE satellite data from CelesTrak
+Load TLE satellite orbital elements
 -------------------------------------------------- */
 
 async function loadTLE() {
@@ -26,7 +27,7 @@ async function loadTLE() {
 
   const lines = text.trim().split("\n");
 
-  const satellites = [];
+  const sats = [];
 
   for (let i = 0; i < lines.length; i += 3) {
 
@@ -34,24 +35,59 @@ async function loadTLE() {
     const line1 = lines[i + 1].trim();
     const line2 = lines[i + 2].trim();
 
-    satellites.push({
+    sats.push({
       name,
       satrec: satellite.twoline2satrec(line1, line2)
     });
 
   }
 
-  return satellites;
+  return sats;
 
 }
 
 /* --------------------------------------------------
-   Convert satellite ECI position -> Three.js coords
+Load UCS Satellite Metadata Catalog
+-------------------------------------------------- */
+
+async function loadCatalog() {
+
+  const response = await fetch("/data/ucs_satellite_catalog.csv");
+
+  const csv = await response.text();
+
+  const parsed = Papa.parse(csv, { header: true });
+
+  const catalog = {};
+
+  parsed.data.forEach(row => {
+
+    const name = row["Current Official Name of Satellite"];
+
+    if (!name) return;
+
+    catalog[name.toUpperCase()] = {
+
+      name: name,
+      country: row["Country of Operator/Owner"],
+      operator: row["Operator/Owner"],
+      type: row["Purpose"],
+      orbit: row["Class of Orbit"]
+
+    };
+
+  });
+
+  return catalog;
+
+}
+
+/* --------------------------------------------------
+Convert ECI coords -> Three.js coords
 -------------------------------------------------- */
 
 function satToVector(position) {
 
-  // Earth radius ~6371km
   const scale = 1 / 6371;
 
   return new THREE.Vector3(
@@ -63,21 +99,27 @@ function satToVector(position) {
 }
 
 /* --------------------------------------------------
-   Main Initialization
+Main App
 -------------------------------------------------- */
 
 async function init() {
 
   if (!navigator.gpu) {
-    document.body.innerHTML = "WebGPU not supported in this browser.";
+
+    document.body.innerHTML =
+      "WebGPU not supported in this browser.";
+
     return;
+
   }
 
-  /* ---------------- Scene ---------------- */
+  /* Scene */
 
   const scene = new THREE.Scene();
 
-  /* ---------------- Camera ---------------- */
+  const loadingOverlay = document.getElementById("loading-overlay");
+
+  /* Camera */
 
   const camera = new THREE.PerspectiveCamera(
     60,
@@ -88,7 +130,7 @@ async function init() {
 
   camera.position.set(0, 1.5, 4);
 
-  /* ---------------- Renderer (WebGPU) ---------------- */
+  /* Renderer */
 
   const renderer = new WebGPURenderer({ antialias: true });
 
@@ -99,24 +141,21 @@ async function init() {
 
   await renderer.init();
 
-  /* ---------------- Controls ---------------- */
+  /* Controls */
 
   const controls = new OrbitControls(camera, renderer.domElement);
-
   controls.enableDamping = true;
-  controls.minDistance = 2;
-  controls.maxDistance = 20;
 
-  /* ---------------- Lighting ---------------- */
+  /* Lighting */
 
   const sunLight = new THREE.DirectionalLight(0xffffff, 2);
   sunLight.position.set(5, 2, 5);
   scene.add(sunLight);
 
-  const ambientLight = new THREE.AmbientLight(0x222222);
-  scene.add(ambientLight);
+  const ambient = new THREE.AmbientLight(0x222222);
+  scene.add(ambient);
 
-  /* ---------------- Textures ---------------- */
+  /* Textures */
 
   const loader = new THREE.TextureLoader();
 
@@ -125,172 +164,221 @@ async function init() {
   const clouds = loader.load("/textures/earth_clouds_1024.png");
   const stars = loader.load("/textures/starfield.jpg");
 
-  /* ---------------- Starfield ---------------- */
+  /* Starfield */
 
-  const starGeometry = new THREE.SphereGeometry(100, 64, 64);
-
-  const starMaterial = new THREE.MeshBasicMaterial({
-    map: stars,
-    side: THREE.BackSide
-  });
-
-  const starSphere = new THREE.Mesh(starGeometry, starMaterial);
+  const starSphere = new THREE.Mesh(
+    new THREE.SphereGeometry(100, 64, 64),
+    new THREE.MeshBasicMaterial({
+      map: stars,
+      side: THREE.BackSide
+    })
+  );
 
   scene.add(starSphere);
 
-  /* ---------------- Earth ---------------- */
+  /* Earth */
 
-  const earthGeometry = new THREE.SphereGeometry(1, 64, 64);
-
-  const earthMaterial = new THREE.MeshStandardMaterial({
-    map: earthDay,
-    emissiveMap: earthNight,
-    emissive: new THREE.Color(0xffffff),
-    emissiveIntensity: 0.6
-  });
-
-  const earth = new THREE.Mesh(earthGeometry, earthMaterial);
+  const earth = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 64, 64),
+    new THREE.MeshStandardMaterial({
+      map: earthDay,
+      emissiveMap: earthNight,
+      emissive: new THREE.Color(0xffffff),
+      emissiveIntensity: 0.6
+    })
+  );
 
   scene.add(earth);
 
-  /* ---------------- Clouds ---------------- */
+  /* Clouds */
 
-  const cloudGeometry = new THREE.SphereGeometry(1.01, 64, 64);
-
-  const cloudMaterial = new THREE.MeshStandardMaterial({
-    map: clouds,
-    transparent: true,
-    opacity: 0.8,
-    depthWrite: false
-  });
-
-  const cloudMesh = new THREE.Mesh(cloudGeometry, cloudMaterial);
+  const cloudMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(1.01, 64, 64),
+    new THREE.MeshStandardMaterial({
+      map: clouds,
+      transparent: true,
+      opacity: 0.8
+    })
+  );
 
   scene.add(cloudMesh);
 
-  /* ---------------- Atmosphere Glow ---------------- */
-
-  const atmosphereGeometry = new THREE.SphereGeometry(1.1, 64, 64);
-
-  const atmosphereMaterial = new THREE.ShaderMaterial({
-
-    vertexShader: `
-      varying vec3 vNormal;
-      void main() {
-        vNormal = normalize(normalMatrix * normal);
-        gl_Position = projectionMatrix *
-                      modelViewMatrix *
-                      vec4(position,1.0);
-      }
-    `,
-
-    fragmentShader: `
-      varying vec3 vNormal;
-      void main() {
-        float intensity =
-          pow(0.6 - dot(vNormal, vec3(0,0,1.0)), 2.0);
-
-        gl_FragColor =
-          vec4(0.3,0.6,1.0,1.0) * intensity;
-      }
-    `,
-
-    blending: THREE.AdditiveBlending,
-    side: THREE.BackSide,
-    transparent: true
-
-  });
+  /* Atmosphere */
 
   const atmosphere = new THREE.Mesh(
-    atmosphereGeometry,
-    atmosphereMaterial
+
+    new THREE.SphereGeometry(1.1, 64, 64),
+
+    new THREE.ShaderMaterial({
+
+      vertexShader: `
+      varying vec3 vNormal;
+      void main(){
+        vNormal = normalize(normalMatrix * normal);
+        gl_Position =
+        projectionMatrix *
+        modelViewMatrix *
+        vec4(position,1.0);
+      }`,
+
+      fragmentShader: `
+      varying vec3 vNormal;
+      void main(){
+        float intensity =
+        pow(0.6 - dot(vNormal, vec3(0,0,1.0)),2.0);
+        gl_FragColor =
+        vec4(0.3,0.6,1.0,1.0) * intensity;
+      }`,
+
+      blending: THREE.AdditiveBlending,
+      side: THREE.BackSide,
+      transparent: true
+
+    })
+
   );
 
   scene.add(atmosphere);
 
-  /* ---------------- Load Satellites ---------------- */
+  /* Load Data */
 
-  console.log("Loading satellite TLE data...");
-
+  console.log("Loading TLE data...");
   const tleSatellites = await loadTLE();
 
-  console.log("Satellites loaded:", tleSatellites.length);
+  console.log("Loading satellite catalog...");
+  const catalog = await loadCatalog();
 
-  // Limit for performance while developing
-  const MAX_SATELLITES = 2000;
+  loadingOverlay.style.display = "none";
+  
+  /* Merge metadata */
 
-  const activeSatellites = tleSatellites.slice(0, MAX_SATELLITES);
+  const satellites = tleSatellites.map(s => {
 
-  /* ---------------- Satellite Mesh ---------------- */
+    const meta =
+      catalog[s.name.toUpperCase()] || {};
 
-  const satelliteGeometry = new THREE.SphereGeometry(0.015, 6, 6);
+    return {
 
-  const satelliteMaterial = new THREE.MeshBasicMaterial({
-    color: 0xffaa00
+      name: s.name,
+      satrec: s.satrec,
+
+      metadata: {
+
+        name: s.name,
+        country: meta.country || "Unknown",
+        operator: meta.operator || "Unknown",
+        type: meta.type || "Unknown",
+        orbit: meta.orbit || "Unknown"
+
+      }
+
+    };
+
   });
 
-  const satellitesMesh = new THREE.InstancedMesh(
-    satelliteGeometry,
-    satelliteMaterial,
-    activeSatellites.length
-  );
+  /* Limit for dev */
+
+  const MAX_SATELLITES = 2000;
+
+  const activeSatellites =
+    satellites.slice(0, MAX_SATELLITES);
+
+  let visibleMask =
+    new Array(activeSatellites.length).fill(true);
+
+  /* Instanced Mesh */
+
+  const satelliteGeometry =
+    new THREE.SphereGeometry(0.015, 6, 6);
+
+  const satelliteMaterial =
+    new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+
+  const satellitesMesh =
+    new THREE.InstancedMesh(
+      satelliteGeometry,
+      satelliteMaterial,
+      activeSatellites.length
+    );
 
   scene.add(satellitesMesh);
 
   const dummy = new THREE.Object3D();
 
-  /* ---------------- Time Control ---------------- */
+  /* Raycasting */
 
-  let simulationTime = Date.now();
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
 
-  /* ---------------- Resize Handling ---------------- */
+  window.addEventListener("mousemove", e => {
 
-  window.addEventListener("resize", () => {
-
-    camera.aspect =
-      window.innerWidth / window.innerHeight;
-
-    camera.updateProjectionMatrix();
-
-    renderer.setSize(
-      window.innerWidth,
-      window.innerHeight
-    );
+    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
 
   });
 
-  /* ---------------- Animation Loop ---------------- */
+  /* AI Filter Listener */
+
+  window.addEventListener("satellite-filter", e => {
+
+    const filter = e.detail;
+
+    for (let i = 0; i < activeSatellites.length; i++) {
+
+      const sat = activeSatellites[i];
+
+      let visible = true;
+
+      if (filter.country &&
+        sat.metadata.country !== filter.country)
+        visible = false;
+
+      if (filter.type &&
+        sat.metadata.type !== filter.type)
+        visible = false;
+
+      if (filter.nameContains &&
+        !sat.name.toLowerCase()
+          .includes(filter.nameContains.toLowerCase()))
+        visible = false;
+
+      visibleMask[i] = visible;
+
+    }
+
+  });
+
+  /* Time */
+
+  let simulationTime = Date.now();
+
+  /* Animation */
 
   renderer.setAnimationLoop(() => {
 
     controls.update();
 
-    // advance simulation time
-    simulationTime += 1000 * 10;
+    simulationTime += 10000;
 
     const now = new Date(simulationTime);
 
-    /* ----- Earth rotation ----- */
-
     earth.rotation.y += 0.0006;
-
     cloudMesh.rotation.y += 0.0008;
-
-    /* ----- Update satellite positions ----- */
 
     for (let i = 0; i < activeSatellites.length; i++) {
 
       const satrec = activeSatellites[i].satrec;
 
-      const positionAndVelocity =
-        satellite.propagate(satrec, now);
+      const pv = satellite.propagate(satrec, now);
 
-      const positionEci =
-        positionAndVelocity.position;
+      if (!pv.position) continue;
 
-      if (!positionEci) continue;
+      const pos = satToVector(pv.position);
 
-      const pos = satToVector(positionEci);
+      if (!visibleMask[i])
+        dummy.scale.set(0, 0, 0);
+      else
+        dummy.scale.set(1, 1, 1);
 
       dummy.position.copy(pos);
 
@@ -302,14 +390,45 @@ async function init() {
 
     satellitesMesh.instanceMatrix.needsUpdate = true;
 
+    /* Hover detection */
+
+    raycaster.setFromCamera(mouse, camera);
+
+    const intersects =
+      raycaster.intersectObject(satellitesMesh);
+
+    const hover =
+      document.getElementById("satellite-hover-card");
+
+    if (intersects.length > 0) {
+
+      const id = intersects[0].instanceId;
+
+      if (visibleMask[id]) {
+
+        hover.innerText =
+          activeSatellites[id].name;
+
+        hover.style.left =
+          event.clientX + 10 + "px";
+
+        hover.style.top =
+          event.clientY + 10 + "px";
+
+        hover.classList.remove("hidden");
+
+      }
+
+    } else {
+
+      hover.classList.add("hidden");
+
+    }
+
     renderer.render(scene, camera);
 
   });
 
 }
-
-/* --------------------------------------------------
-   Start App
--------------------------------------------------- */
 
 init();

@@ -12,6 +12,7 @@
     "vite": "^8.0.0"
   },
   "dependencies": {
+    "papaparse": "^5.5.3",
     "satellite.js": "^6.0.2",
     "three": "^0.183.2"
   }

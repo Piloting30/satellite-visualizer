@@ -1,64 +1,71 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-<meta charset="UTF-8" />
-<title>Satellite Visualizer</title>
 
-<link rel="stylesheet" href="/src/ui.css" />
+<head>
+  <meta charset="UTF-8" />
+  <title>Satellite Visualizer</title>
+
+  <link rel="stylesheet" href="/src/ui.css" />
 
 </head>
 
 <body>
 
-<!-- 3D canvas will still be inserted by Three.js -->
-<div id="ui-overlay">
-
-  <!-- Search Bar -->
-  <div id="search-container">
-    <input
-      id="search-input"
-      type="text"
-      placeholder="Find Russian recon satellites in LEO..."
-    />
-    <button id="search-btn">Search</button>
+  <!-- Satellite Loading Overlay -->
+  <div id="loading-overlay">
+    <div class="loading-box">
+      <div class="spinner"></div>
+      <p>Loading Satellites...</p>
+    </div>
   </div>
 
-  <!-- Settings Button -->
-  <button id="settings-btn">⚙ Settings</button>
+  <!-- 3D canvas will still be inserted by Three.js -->
+  <div id="ui-overlay">
 
-</div>
+    <!-- Search Bar -->
+    <div id="search-container">
+      <input id="search-input" type="text" placeholder="Find Russian recon satellites in LEO..." />
+      <button id="search-btn">Search</button>
+    </div>
 
-<!-- Settings Modal -->
-<div id="settings-modal" class="hidden">
+    <!-- Settings Button -->
+    <button id="settings-btn">⚙ Settings</button>
 
-  <div class="modal-content">
+  </div>
 
-    <h2>Claude API Key</h2>
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="hidden">
 
-    <p>
-      Paste your Anthropic API key below.
-      It will be stored locally in your browser.
-    </p>
+    <div class="modal-content">
 
-    <input
-      id="api-key-input"
-      type="password"
-      placeholder="sk-ant-..."
-    />
+      <h2>Claude API Key</h2>
 
-    <div class="modal-buttons">
-      <button id="save-key-btn">Save</button>
-      <button id="close-modal-btn">Close</button>
+      <p>
+        Paste your Anthropic API key below.
+        It will be stored locally in your browser.
+      </p>
+
+      <input id="api-key-input" type="password" placeholder="sk-ant-..." />
+
+      <div class="modal-buttons">
+        <button id="save-key-btn">Save</button>
+        <button id="close-modal-btn">Close</button>
+      </div>
+
     </div>
 
   </div>
 
-</div>
+  <div id="satellite-hover-card" class="hidden"></div>
 
-<script type="module" src="/src/search.js"></script>
+  <div id="satellite-detail-card" class="hidden">
+    <div id="detail-content"></div>
+    <button id="close-detail">Close</button>
+  </div>
 
-<!-- Your Three.js app -->
-<script type="module" src="/src/main.js"></script>
+  <script type="module" src="/src/search.js"></script>
+  <script type="module" src="/src/main.js"></script>
 
 </body>
+
 </html>

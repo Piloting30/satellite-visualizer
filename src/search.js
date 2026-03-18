@@ -3,6 +3,8 @@ Natural Language Satellite Search
 Uses the Claude API directly from the browser
 */
 
+export let currentFilter = null;
+
 const API_URL = "https://api.anthropic.com/v1/messages";
 
 /* ---------------- System Prompt ---------------- */
@@ -58,24 +60,28 @@ const closeBtn = document.getElementById("close-modal-btn");
 const saveBtn = document.getElementById("save-key-btn");
 const apiKeyInput = document.getElementById("api-key-input");
 
-settingsBtn.onclick = () => modal.classList.remove("hidden");
+/* Settings button still opens modal manually */
 
-closeBtn.onclick = () => modal.classList.add("hidden");
+settingsBtn.onclick = () => {
+    modal.classList.remove("hidden");
+};
+
+closeBtn.onclick = () => {
+    modal.classList.add("hidden");
+};
+
+/* Save API Key */
 
 saveBtn.onclick = () => {
 
-  const key = apiKeyInput.value.trim();
+    const key = apiKeyInput.value.trim();
 
-  if (!key) {
-    alert("Please enter a valid API key");
-    return;
-  }
+    if (key) {
+        localStorage.setItem("CLAUDE_API_KEY", key);
+        alert("API key saved locally");
+    }
 
-  localStorage.setItem("CLAUDE_API_KEY", key);
-
-  modal.classList.add("hidden");
-
-  alert("API key saved locally");
+    modal.classList.add("hidden");
 
 };
 
@@ -87,71 +93,77 @@ const searchInput = document.getElementById("search-input");
 searchBtn.onclick = runSearch;
 
 searchInput.addEventListener("keydown", e => {
-  if (e.key === "Enter") runSearch();
+    if (e.key === "Enter") runSearch();
 });
 
 /* ---------------- Claude Request ---------------- */
 
 async function runSearch() {
 
-  const apiKey = localStorage.getItem("CLAUDE_API_KEY");
+    let apiKey = localStorage.getItem("CLAUDE_API_KEY");
 
-  if (!apiKey) {
-    alert("Please add your Claude API key in Settings.");
-    return;
-  }
+    /* If no key → prompt user */
 
-  const query = searchInput.value.trim();
+    if (!apiKey) {
 
-  if (!query) return;
+        modal.classList.remove("hidden");
 
-  try {
+        return;
 
-    const response = await fetch(API_URL, {
+    }
 
-      method: "POST",
+    const query = searchInput.value.trim();
 
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01"
-      },
+    if (!query) return;
 
-      body: JSON.stringify({
+    try {
 
-        model: "claude-3-5-sonnet-latest",
+        const response = await fetch(API_URL, {
 
-        max_tokens: 200,
+            method: "POST",
 
-        system: SYSTEM_PROMPT,
+            headers: {
+                "Content-Type": "application/json",
+                "x-api-key": apiKey,
+                "anthropic-version": "2023-06-01"
+            },
 
-        messages: [
-          {
-            role: "user",
-            content: query
-          }
-        ]
+            body: JSON.stringify({
 
-      })
+                model: "claude-3-5-sonnet-latest",
 
-    });
+                max_tokens: 200,
 
-    const data = await response.json();
+                system: SYSTEM_PROMPT,
 
-    const text = data.content[0].text;
+                messages: [
+                    {
+                        role: "user",
+                        content: query
+                    }
+                ]
 
-    const json = JSON.parse(text);
+            })
 
-    console.log("Claude Filter Result:", json);
+        });
 
-    // Later we will pass this JSON to the satellite filter system
+        const data = await response.json();
 
-  } catch (err) {
+        const text = data.content[0].text;
 
-    console.error("Claude API error:", err);
+        const json = JSON.parse(text);
 
-    alert("Search failed. Check console.");
+        currentFilter = json;
 
-  }
+        window.dispatchEvent(
+            new CustomEvent("satellite-filter", { detail: json })
+        );
+
+    } catch (err) {
+
+        console.error(err);
+        alert("Search failed");
+
+    }
 
 }
