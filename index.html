@@ -29,25 +29,16 @@
        LEFT PANEL: Satellite List
        ============================================================ -->
   <div id="sat-list-panel">
-
-    <!-- Panel header -->
     <div class="sat-list-header">
       <div class="sat-list-title">Satellites</div>
       <button id="sat-list-collapse" class="sat-list-collapse-btn" title="Collapse panel">◀</button>
     </div>
-
-    <!-- Active filter chip -->
     <div id="filter-chip" class="hidden">
       <span id="filter-chip-label"></span>
       <button id="filter-chip-clear" title="Clear filter">✕</button>
     </div>
-
-    <!-- Count -->
     <div id="sat-list-count" class="sat-list-count"></div>
-
-    <!-- Scrollable list -->
     <div id="sat-list-items" class="sat-list-items"></div>
-
   </div>
 
   <!-- Satellite hover tooltip -->
@@ -60,9 +51,56 @@
   </div>
 
   <!-- ============================================================
+       INFO MODAL
+       ============================================================ -->
+  <div id="info-modal" class="hidden">
+    <div class="info-modal-backdrop"></div>
+    <div class="info-modal-content">
+
+      <div class="info-modal-header">
+        <span class="info-modal-title">Satellite Visualizer</span>
+        <button id="info-modal-close" title="Close">✕</button>
+      </div>
+
+      <p class="info-modal-desc">
+        A real-time 3D visualization of every active satellite in Earth orbit.
+        Orbital positions are computed live from TLE data provided by CelesTrak
+        and updated continuously as the simulation runs.
+      </p>
+
+      <div class="info-section-title">Search</div>
+      <p class="info-section-body">
+        Use natural language to filter satellites. The search bar understands
+        country, purpose, orbit type, and constellation names.
+      </p>
+      <div class="info-examples">
+        <div class="info-example">"Russian reconnaissance satellites in LEO"</div>
+        <div class="info-example">"Starlink constellation"</div>
+        <div class="info-example">"US weather satellites"</div>
+        <div class="info-example">"Chinese navigation satellites in MEO"</div>
+        <div class="info-example">"Show all" — clears the active filter</div>
+      </div>
+
+      <div class="info-section-title">Keyboard Shortcuts</div>
+      <div class="info-shortcuts">
+        <div class="info-shortcut"><kbd>Space</kbd><span>Play / Pause</span></div>
+        <div class="info-shortcut"><kbd>←</kbd><kbd>→</kbd><span>Step time ±10 minutes</span></div>
+        <div class="info-shortcut"><kbd>[</kbd><kbd>]</kbd><span>Decrease / increase speed</span></div>
+        <div class="info-shortcut"><kbd>N</kbd><span>Jump to current real time</span></div>
+        <div class="info-shortcut"><kbd>T</kbd><span>Toggle satellite trails</span></div>
+        <div class="info-shortcut"><kbd>U</kbd><span>Toggle UTC / local time</span></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============================================================
        TIME CONTROLS BAR
        ============================================================ -->
   <div id="time-bar">
+
+    <!-- Far left: info button -->
+    <button id="info-btn" class="time-btn time-btn--info" title="About & shortcuts">ℹ</button>
 
     <div class="time-section time-section--left">
       <div class="time-datetime">
@@ -95,10 +133,6 @@
     <div class="time-section time-section--right">
       <button id="now-btn"          class="time-btn time-btn--now"   title="Jump to now (N)">⊙ NOW</button>
       <button id="trail-toggle-btn" class="time-btn time-btn--trail" title="Toggle trails (T)">Trails: ON</button>
-      <div class="time-hints">
-        <span>Space: play/pause · ← →: step 10m</span>
-        <span>[ ]: speed · N: now · T: trails</span>
-      </div>
     </div>
 
   </div>
@@ -106,6 +140,25 @@
   <script type="module" src="/src/search.js"></script>
   <script type="module" src="/src/main.js"></script>
   <script type="module" src="/src/time-controls.js"></script>
+
+  <!-- Info modal logic (plain script, no module needed) -->
+  <script>
+    const infoBtn     = document.getElementById("info-btn");
+    const infoModal   = document.getElementById("info-modal");
+    const infoClose   = document.getElementById("info-modal-close");
+    const infoBackdrop = infoModal.querySelector(".info-modal-backdrop");
+
+    function openInfo()  { infoModal.classList.remove("hidden"); }
+    function closeInfo() { infoModal.classList.add("hidden"); }
+
+    infoBtn.addEventListener("click", openInfo);
+    infoClose.addEventListener("click", closeInfo);
+    infoBackdrop.addEventListener("click", closeInfo);
+
+    document.addEventListener("keydown", e => {
+      if (e.key === "Escape") closeInfo();
+    });
+  </script>
 
 </body>
 </html>

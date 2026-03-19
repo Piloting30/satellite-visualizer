@@ -478,15 +478,171 @@ body {
 .speed-btn:hover { background: rgba(30, 55, 110, 0.7); color: rgba(160, 200, 255, 0.9); border-color: rgba(80, 140, 255, 0.3); }
 .speed-btn.active { background: rgba(26, 95, 255, 0.28); border-color: rgba(80, 160, 255, 0.55); color: #90c0ff; }
 
-.time-hints {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 9px;
-  color: rgba(90, 120, 190, 0.38);
-  letter-spacing: 0.03em;
-  line-height: 1.5;
-  text-align: right;
+.hidden { display: none !important; }
+
+/* ============================================================
+   INFO BUTTON (bottom-left of time bar)
+   ============================================================ */
+
+.time-btn--info {
+  font-size: 14px;
+  font-weight: bold;
+  padding: 5px 10px;
+  background: rgba(20, 35, 70, 0.7);
+  border-color: rgba(80, 140, 255, 0.2);
+  color: rgba(140, 180, 255, 0.6);
+  flex-shrink: 0;
 }
 
-.hidden { display: none !important; }
+.time-btn--info:hover {
+  background: rgba(30, 55, 110, 0.8);
+  color: rgba(180, 210, 255, 0.9);
+}
+
+/* ============================================================
+   INFO MODAL
+   ============================================================ */
+
+#info-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.info-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+.info-modal-content {
+  position: relative;
+  z-index: 1;
+  width: 480px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  background: rgba(6, 10, 28, 0.97);
+  border: 1px solid rgba(80, 140, 255, 0.2);
+  border-radius: 12px;
+  padding: 24px 28px;
+  font-family: 'Courier New', Courier, monospace;
+  color: rgba(160, 190, 255, 0.85);
+}
+
+.info-modal-content::-webkit-scrollbar { width: 4px; }
+.info-modal-content::-webkit-scrollbar-track { background: transparent; }
+.info-modal-content::-webkit-scrollbar-thumb { background: rgba(80,140,255,0.2); border-radius: 2px; }
+
+.info-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.info-modal-title {
+  font-size: 14px;
+  font-weight: bold;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #c8daff;
+}
+
+#info-modal-close {
+  background: transparent;
+  border: none;
+  color: rgba(120, 160, 255, 0.5);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+  font-family: inherit;
+}
+
+#info-modal-close:hover {
+  color: rgba(255, 120, 120, 0.9);
+  background: rgba(255, 80, 80, 0.08);
+}
+
+.info-modal-desc {
+  font-size: 12px;
+  line-height: 1.75;
+  color: rgba(140, 170, 230, 0.7);
+  margin: 0 0 20px;
+}
+
+.info-section-title {
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(100, 150, 255, 0.6);
+  margin-bottom: 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid rgba(80, 140, 255, 0.12);
+}
+
+.info-section-body {
+  font-size: 12px;
+  line-height: 1.7;
+  color: rgba(140, 170, 230, 0.65);
+  margin: 0 0 10px;
+}
+
+.info-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 20px;
+}
+
+.info-example {
+  font-size: 11px;
+  color: rgba(120, 180, 255, 0.75);
+  background: rgba(26, 60, 120, 0.2);
+  border: 1px solid rgba(80, 140, 255, 0.12);
+  border-radius: 5px;
+  padding: 5px 10px;
+  letter-spacing: 0.03em;
+}
+
+.info-shortcuts {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 4px;
+}
+
+.info-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.info-shortcut span {
+  color: rgba(140, 170, 230, 0.65);
+}
+
+kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  padding: 2px 6px;
+  background: rgba(30, 50, 100, 0.6);
+  border: 1px solid rgba(80, 140, 255, 0.25);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11px;
+  color: #90b8ff;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}

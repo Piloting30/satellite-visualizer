@@ -276,12 +276,10 @@ function writeTrailColors(colors, base, filled) {
   Satellite List Panel
 -------------------------------------------------- */
 
-function buildSatelliteList(activeSatellites, visibleMask, onSelect) {
-  const panel      = document.getElementById("sat-list-panel");
-  const countEl    = document.getElementById("sat-list-count");
-  const listEl     = document.getElementById("sat-list-items");
+function buildSatelliteList(activeSatellites, visibleMask, onSelect, onHover, onHoverEnd) {
+  const countEl = document.getElementById("sat-list-count");
+  const listEl  = document.getElementById("sat-list-items");
 
-  // Build sorted index of currently visible satellites
   const visibleIndices = activeSatellites
     .map((s, i) => ({ s, i }))
     .filter(({ i }) => visibleMask[i])
@@ -299,8 +297,9 @@ function buildSatelliteList(activeSatellites, visibleMask, onSelect) {
     row.className   = "sat-row";
     row.dataset.idx = i;
     row.textContent = s.name;
-    row.title       = `${s.metadata.country} · ${s.metadata.type} · ${s.metadata.orbit}`;
-    row.addEventListener("click", () => onSelect(i));
+    row.addEventListener("click",      () => onSelect(i));
+    row.addEventListener("mouseenter", () => onHover(i, row));
+    row.addEventListener("mouseleave", () => onHoverEnd());
     listEl.appendChild(row);
   }
 }
@@ -436,6 +435,11 @@ async function init() {
 
   let visibleMask    = new Array(activeSatellites.length).fill(true);
   let selectedSatIdx = -1;
+  let hoveredSatIdx  = -1;   // satellite hovered from list panel (not globe mouse)
+
+  // Live world-space positions updated every frame — used to position
+  // the hover card when hovering a row in the satellite list.
+  const satPositions = new Array(activeSatellites.length);
 
   /* Instanced mesh */
   const satellitesMesh = new THREE.InstancedMesh(
@@ -536,13 +540,13 @@ async function init() {
       if (filter.nameContains && !sat.name.toLowerCase().includes(filter.nameContains.toLowerCase())) visible = false;
       visibleMask[i] = visible;
     }
-    buildSatelliteList(activeSatellites, visibleMask, selectSatellite);
+    buildSatelliteList(activeSatellites, visibleMask, selectSatellite, onListHover, onListHoverEnd);
   }
 
   function clearFilter() {
     visibleMask.fill(true);
     filterChip.classList.add("hidden");
-    buildSatelliteList(activeSatellites, visibleMask, selectSatellite);
+    buildSatelliteList(activeSatellites, visibleMask, selectSatellite, onListHover, onListHoverEnd);
   }
 
   filterClearBtn.addEventListener("click", clearFilter);
@@ -573,8 +577,41 @@ async function init() {
     collapseBtn.title       = panel.classList.contains("collapsed") ? "Expand panel" : "Collapse panel";
   });
 
+  /* List hover — show hover card projected to globe position */
+  const hover = document.getElementById("satellite-hover-card");
+
+  function onListHover(idx, rowEl) {
+    hoveredSatIdx = idx;
+    // If we have a current world position for this satellite, project it to screen
+    const pos = satPositions[idx];
+    if (pos) {
+      const projected = pos.clone().project(camera);
+      const x = ( projected.x * 0.5 + 0.5) * window.innerWidth;
+      const y = (-projected.y * 0.5 + 0.5) * window.innerHeight;
+      // Only show if satellite is in front of camera (z < 1)
+      if (projected.z < 1) {
+        hover.innerText  = activeSatellites[idx].name;
+        hover.style.left = (x + 12) + "px";
+        hover.style.top  = (y - 10) + "px";
+        hover.classList.remove("hidden");
+        return;
+      }
+    }
+    hover.classList.add("hidden");
+  }
+
+  function onListHoverEnd() {
+    hoveredSatIdx = -1;
+    // Only hide if not currently shown by globe raycaster
+    hover.classList.add("hidden");
+    // Restore highlight to selected only
+    if (selectedSatIdx === -1) {
+      highlightMesh.material.opacity = 0.0;
+    }
+  }
+
   /* Build initial list */
-  buildSatelliteList(activeSatellites, visibleMask, selectSatellite);
+  buildSatelliteList(activeSatellites, visibleMask, selectSatellite, onListHover, onListHoverEnd);
 
   /* Earth rotation */
   const EARTH_ROT_RATE_MS = (2 * Math.PI) / 86164100;
@@ -642,6 +679,9 @@ async function init() {
         writeTrailColors(trail.colors, cbase, tb.filled);
       }
 
+      /* Store world-space position for list-hover use */
+      satPositions[i] = pos.clone();
+
       /* Satellite dot */
       const s = visibleMask[i] ? 1 : 0;
       dummy.scale.set(s, s, s);
@@ -649,9 +689,15 @@ async function init() {
       dummy.updateMatrix();
       satellitesMesh.setMatrixAt(i, dummy.matrix);
 
-      /* Move highlight to selected satellite */
+      /* Move highlight to selected or hovered satellite */
       if (i === selectedSatIdx) {
         highlightMesh.position.copy(pos);
+        highlightMesh.material.color.setHex(0xffffff);
+        highlightMesh.material.opacity = 1.0;
+      } else if (i === hoveredSatIdx) {
+        highlightMesh.position.copy(pos);
+        highlightMesh.material.color.setHex(0x88ccff);
+        highlightMesh.material.opacity = 0.7;
       }
     }
 
