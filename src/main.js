@@ -264,15 +264,31 @@ function createTrailSystem(count) {
   return { lines, positions, colors, geometry };
 }
 
-function resetAllTrails(trailBuffers, trail, count) {
+// Reset a single satellite's trail buffer, flood-filling all slots with `pos`
+// so every segment is degenerate (zero-length) and invisible.
+// If pos is omitted, slots are set to (0,0,0) which is fine as long as
+// resetSingleTrail is called again with a real pos on the first frame.
+function resetSingleTrail(tb, trail, satIdx, pos) {
+  tb.head = 0; tb.filled = 0;
+  const base  = satIdx * TRAIL_LENGTH * 3;
+  const cbase = satIdx * TRAIL_LENGTH * 4;
+  const x = pos ? pos.x : 0;
+  const y = pos ? pos.y : 0;
+  const z = pos ? pos.z : 0;
+  for (let j = 0; j < TRAIL_LENGTH; j++) {
+    trail.positions[base + j*3]   = x;
+    trail.positions[base + j*3+1] = y;
+    trail.positions[base + j*3+2] = z;
+    trail.colors[cbase + j*4]   = 0;
+    trail.colors[cbase + j*4+1] = 0;
+    trail.colors[cbase + j*4+2] = 0;
+    trail.colors[cbase + j*4+3] = 0;
+  }
+}
+
+function resetAllTrails(trailBuffers, trail, count, positions) {
   for (let i = 0; i < count; i++) {
-    const tb = trailBuffers[i];
-    tb.head = 0; tb.filled = 0;
-    const base = i * TRAIL_LENGTH * 3, cbase = i * TRAIL_LENGTH * 4;
-    for (let j = 0; j < TRAIL_LENGTH; j++) {
-      trail.positions[base + j*3] = trail.positions[base + j*3+1] = trail.positions[base + j*3+2] = 0;
-      trail.colors[cbase + j*4] = trail.colors[cbase + j*4+1] = trail.colors[cbase + j*4+2] = trail.colors[cbase + j*4+3] = 0;
-    }
+    resetSingleTrail(trailBuffers[i], trail, i, positions ? positions[i] : null);
   }
   trail.geometry.attributes.position.needsUpdate = true;
   trail.geometry.attributes.color.needsUpdate    = true;
@@ -530,7 +546,11 @@ async function init() {
   }));
   resetAllTrails(trailBuffers, trail, activeSatellites.length);
 
-  window.trailsVisible = true;
+  window.trailsVisible = false;
+  // Trails start hidden; reset buffers so they start clean when toggled on
+  trail.lines.visible = false;
+  resetAllTrails(trailBuffers, trail, activeSatellites.length);
+
   window.addEventListener("toggle-trails", () => {
     window.trailsVisible    = !window.trailsVisible;
     trail.lines.visible     =  window.trailsVisible;
@@ -741,10 +761,10 @@ async function init() {
     const isJump     = Math.abs(simDelta) > TRAIL_RESET_JUMP_MS;
     const needsReset = simState.needsTrailReset || isJump || isRewind;
 
-    if (needsReset) {
-      resetAllTrails(trailBuffers, trail, activeSatellites.length);
-      simState.needsTrailReset = false;
-    }
+    // needsReset flag — individual trail resets happen per-satellite
+    // inside the loop below, with the satellite's current position,
+    // so no blanket reset is needed here.
+    if (needsReset) simState.needsTrailReset = false;
 
     const now        = new Date(simState.time);
     const earthAngle = (simState.time - J2000_MS) * EARTH_ROT_RATE_MS;
@@ -761,17 +781,28 @@ async function init() {
       const pos = satToVector(pv.position);
 
       /* Trails */
-      if (window.trailsVisible && sampleTrail && !needsReset) {
-        const tb = trailBuffers[i];
-        tb.buf[tb.head].copy(pos);
-        tb.head = (tb.head + 1) % TRAIL_LENGTH;
-        if (tb.filled < TRAIL_LENGTH) tb.filled++;
-      }
-
       if (window.trailsVisible) {
         const tb    = trailBuffers[i];
         const base  = i * TRAIL_LENGTH * 3;
         const cbase = i * TRAIL_LENGTH * 4;
+
+        // On a reset frame, flood-fill this satellite's slots with its current
+        // position so all segments are degenerate (zero-length) and invisible.
+        // This eliminates any streak to the old position or to the origin.
+        if (needsReset) {
+          resetSingleTrail(tb, trail, i, pos);
+        }
+
+        // Sample a new position into the ring buffer
+        if (sampleTrail && !needsReset) {
+          tb.buf[tb.head].copy(pos);
+          tb.head = (tb.head + 1) % TRAIL_LENGTH;
+          if (tb.filled < TRAIL_LENGTH) tb.filled++;
+        }
+
+        // Write ring buffer to geometry in chronological order.
+        // Unfilled prefix slots hold the satellite's reset position (degenerate)
+        // so they are invisible — no NaN needed.
         const start = (tb.head - tb.filled + TRAIL_LENGTH) % TRAIL_LENGTH;
         for (let j = 0; j < TRAIL_LENGTH; j++) {
           const idx = (start + j) % TRAIL_LENGTH;
