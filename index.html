@@ -17,32 +17,43 @@
     </div>
   </div>
 
-  <!-- Top UI: Search + Settings -->
+  <!-- Top UI: Search -->
   <div id="ui-overlay">
     <div id="search-container">
       <input id="search-input" type="text" placeholder="Find Russian recon satellites in LEO..." />
       <button id="search-btn">Search</button>
     </div>
-    <button id="settings-btn">⚙ Settings</button>
   </div>
 
-  <!-- Settings Modal -->
-  <div id="settings-modal" class="hidden">
-    <div class="modal-content">
-      <h2>Claude API Key</h2>
-      <p>Paste your Anthropic API key below. It will be stored locally in your browser.</p>
-      <input id="api-key-input" type="password" placeholder="sk-ant-..." />
-      <div class="modal-buttons">
-        <button id="save-key-btn">Save</button>
-        <button id="close-modal-btn">Close</button>
-      </div>
+  <!-- ============================================================
+       LEFT PANEL: Satellite List
+       ============================================================ -->
+  <div id="sat-list-panel">
+
+    <!-- Panel header -->
+    <div class="sat-list-header">
+      <div class="sat-list-title">Satellites</div>
+      <button id="sat-list-collapse" class="sat-list-collapse-btn" title="Collapse panel">◀</button>
     </div>
+
+    <!-- Active filter chip -->
+    <div id="filter-chip" class="hidden">
+      <span id="filter-chip-label"></span>
+      <button id="filter-chip-clear" title="Clear filter">✕</button>
+    </div>
+
+    <!-- Count -->
+    <div id="sat-list-count" class="sat-list-count"></div>
+
+    <!-- Scrollable list -->
+    <div id="sat-list-items" class="sat-list-items"></div>
+
   </div>
 
   <!-- Satellite hover tooltip -->
   <div id="satellite-hover-card" class="hidden"></div>
 
-  <!-- Satellite detail panel -->
+  <!-- Satellite detail panel (right side) -->
   <div id="satellite-detail-card" class="hidden">
     <div id="detail-content"></div>
     <button id="close-detail">Close</button>
@@ -53,55 +64,44 @@
        ============================================================ -->
   <div id="time-bar">
 
-    <!-- Left: Date + Clock + LIVE indicator -->
     <div class="time-section time-section--left">
       <div class="time-datetime">
         <span id="sim-date">----/--/--</span>
         <span id="sim-clock">--:--:--</span>
+        <span id="sim-offset"></span>
       </div>
       <div id="live-indicator" class="live">● LIVE</div>
       <button id="utc-toggle" class="time-btn" title="Switch to local time">UTC</button>
     </div>
 
-    <!-- Center: Scrubber + playback controls -->
     <div class="time-section time-section--center">
-
-      <!-- Rewind speed buttons -->
       <div class="speed-group">
         <button class="speed-btn" data-speed="-1000" title="Rewind 1000×">⏮ 1K×</button>
         <button class="speed-btn" data-speed="-100"  title="Rewind 100×">◀◀ 100×</button>
         <button class="speed-btn" data-speed="-10"   title="Rewind 10×">◀ 10×</button>
         <button class="speed-btn" data-speed="-1"    title="Rewind 1×">◀ 1×</button>
       </div>
-
-      <!-- Play / Pause -->
-      <button id="play-pause-btn" class="time-btn time-btn--play" title="Pause">⏸</button>
-
-      <!-- Scrubber -->
-      <input id="time-scrubber" type="range" min="0" max="100" value="50" title="Drag to scrub time" />
-
-      <!-- Forward speed buttons -->
+      <button id="step-back-btn" class="time-btn time-btn--step" title="Step back 10 minutes (←)">↩ 10m</button>
+      <button id="play-pause-btn" class="time-btn time-btn--play" title="Pause (Space)">⏸</button>
+      <button id="step-fwd-btn"  class="time-btn time-btn--step" title="Step forward 10 minutes (→)">10m ↪</button>
       <div class="speed-group">
         <button class="speed-btn active" data-speed="1"    title="Play 1×">1× ▶</button>
-        <button class="speed-btn" data-speed="10"   title="Fast 10×">10× ▶▶</button>
-        <button class="speed-btn" data-speed="100"  title="Fast 100×">100× ▶▶</button>
-        <button class="speed-btn" data-speed="1000" title="Fast 1000×">1K× ⏭</button>
+        <button class="speed-btn"        data-speed="10"   title="Fast 10×">10× ▶▶</button>
+        <button class="speed-btn"        data-speed="100"  title="Fast 100×">100× ▶▶</button>
+        <button class="speed-btn"        data-speed="1000" title="Fast 1000×">1K× ⏭</button>
       </div>
     </div>
 
-    <!-- Right: Jump to Now -->
     <div class="time-section time-section--right">
-      <button id="now-btn" class="time-btn time-btn--now" title="Jump to current real time">⊙ NOW</button>
+      <button id="now-btn"          class="time-btn time-btn--now"   title="Jump to now (N)">⊙ NOW</button>
+      <button id="trail-toggle-btn" class="time-btn time-btn--trail" title="Toggle trails (T)">Trails: ON</button>
       <div class="time-hints">
-        <span>Space: play/pause</span>
-        <span>← →: step 10m</span>
-        <span>[ ]: speed</span>
-        <span>N: now</span>
+        <span>Space: play/pause · ← →: step 10m</span>
+        <span>[ ]: speed · N: now · T: trails</span>
       </div>
     </div>
 
   </div>
-  <!-- /time-bar -->
 
   <script type="module" src="/src/search.js"></script>
   <script type="module" src="/src/main.js"></script>
