@@ -244,66 +244,75 @@ export const simState = {
   Trail System
 -------------------------------------------------- */
 
-const TRAIL_LENGTH = 80;
+/* --------------------------------------------------
+  TLE-recomputed trails
+  Instead of a ring buffer, we propagate each satellite
+  backward in time TRAIL_STEPS × TRAIL_STEP_MS to get
+  historically accurate positions with zero artifacts.
+  Trails are always correct after a time jump, rewind,
+  or page load — no reset logic required at all.
+-------------------------------------------------- */
 
+const TRAIL_STEPS   = 60;     // number of points in each trail
+const TRAIL_STEP_MS = 60_000; // gap between points (1 minute of sim time)
+// Total trail length = 60 steps × 1 min = 60 minutes of orbit history
+
+// One shared geometry for all trails.
+// Layout: satellite i occupies slots [i*TRAIL_STEPS .. i*TRAIL_STEPS+TRAIL_STEPS-1]
 function createTrailSystem(count) {
-  const positions = new Float32Array(count * TRAIL_LENGTH * 3);
-  const colors    = new Float32Array(count * TRAIL_LENGTH * 4);
+  const positions = new Float32Array(count * TRAIL_STEPS * 3);
+  const colors    = new Float32Array(count * TRAIL_STEPS * 4);
   const geometry  = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute("color",    new THREE.BufferAttribute(colors,    4));
 
+  // Index buffer: TRAIL_STEPS-1 line segments per satellite
   const indices = [];
   for (let i = 0; i < count; i++) {
-    const base = i * TRAIL_LENGTH;
-    for (let j = 0; j < TRAIL_LENGTH - 1; j++) indices.push(base + j, base + j + 1);
+    const base = i * TRAIL_STEPS;
+    for (let j = 0; j < TRAIL_STEPS - 1; j++) indices.push(base + j, base + j + 1);
   }
   geometry.setIndex(indices);
 
-  const lines = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true }));
-  return { lines, positions, colors, geometry };
+  const mat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true });
+  return { lines: new THREE.LineSegments(geometry, mat), positions, colors, geometry };
 }
 
-// Reset a single satellite's trail buffer, flood-filling all slots with `pos`
-// so every segment is degenerate (zero-length) and invisible.
-// If pos is omitted, slots are set to (0,0,0) which is fine as long as
-// resetSingleTrail is called again with a real pos on the first frame.
-function resetSingleTrail(tb, trail, satIdx, pos) {
-  tb.head = 0; tb.filled = 0;
-  const base  = satIdx * TRAIL_LENGTH * 3;
-  const cbase = satIdx * TRAIL_LENGTH * 4;
-  const x = pos ? pos.x : 0;
-  const y = pos ? pos.y : 0;
-  const z = pos ? pos.z : 0;
-  for (let j = 0; j < TRAIL_LENGTH; j++) {
-    trail.positions[base + j*3]   = x;
-    trail.positions[base + j*3+1] = y;
-    trail.positions[base + j*3+2] = z;
-    trail.colors[cbase + j*4]   = 0;
-    trail.colors[cbase + j*4+1] = 0;
-    trail.colors[cbase + j*4+2] = 0;
-    trail.colors[cbase + j*4+3] = 0;
-  }
-}
+// Write one satellite's trail directly from TLE propagation.
+// Oldest point first (index 0), current position last (index TRAIL_STEPS-1).
+// Color fades from transparent at the tail to TRAIL_MAX_ALPHA at the head.
+const TRAIL_R = 0.3, TRAIL_G = 0.7, TRAIL_B = 1.0, TRAIL_MAX_ALPHA = 0.55;
 
-function resetAllTrails(trailBuffers, trail, count, positions) {
-  for (let i = 0; i < count; i++) {
-    resetSingleTrail(trailBuffers[i], trail, i, positions ? positions[i] : null);
-  }
-  trail.geometry.attributes.position.needsUpdate = true;
-  trail.geometry.attributes.color.needsUpdate    = true;
-}
+function writeTrail(trail, satIdx, satrec, simTimeMs) {
+  const base  = satIdx * TRAIL_STEPS * 3;
+  const cbase = satIdx * TRAIL_STEPS * 4;
 
-const TRAIL_COLOR = { r: 0.3, g: 0.7, b: 1.0 };
-const TRAIL_MAX_ALPHA = 0.55;
+  for (let j = 0; j < TRAIL_STEPS; j++) {
+    // j=0 is oldest (TRAIL_STEPS-1 steps back), j=TRAIL_STEPS-1 is current
+    const t   = simTimeMs - (TRAIL_STEPS - 1 - j) * TRAIL_STEP_MS;
+    const pv  = satellite.propagate(satrec, new Date(t));
+    const alpha = (j / (TRAIL_STEPS - 1)) * TRAIL_MAX_ALPHA;
 
-function writeTrailColors(colors, base, filled) {
-  for (let j = 0; j < TRAIL_LENGTH; j++) {
-    const alpha = j < filled ? (j / (filled - 1 || 1)) * TRAIL_MAX_ALPHA : 0;
-    colors[base + j*4]   = TRAIL_COLOR.r;
-    colors[base + j*4+1] = TRAIL_COLOR.g;
-    colors[base + j*4+2] = TRAIL_COLOR.b;
-    colors[base + j*4+3] = alpha;
+    if (pv.position) {
+      const pos = satToVector(pv.position);
+      trail.positions[base + j*3]   = pos.x;
+      trail.positions[base + j*3+1] = pos.y;
+      trail.positions[base + j*3+2] = pos.z;
+    } else {
+      // Propagation failed for this time step — collapse to current point
+      // so no stray line is drawn. Use the next valid position if available.
+      const fallback = j > 0
+        ? [trail.positions[base+(j-1)*3], trail.positions[base+(j-1)*3+1], trail.positions[base+(j-1)*3+2]]
+        : [0, 0, 0];
+      trail.positions[base + j*3]   = fallback[0];
+      trail.positions[base + j*3+1] = fallback[1];
+      trail.positions[base + j*3+2] = fallback[2];
+    }
+
+    trail.colors[cbase + j*4]   = TRAIL_R;
+    trail.colors[cbase + j*4+1] = TRAIL_G;
+    trail.colors[cbase + j*4+2] = TRAIL_B;
+    trail.colors[cbase + j*4+3] = alpha;
   }
 }
 
@@ -537,24 +546,22 @@ async function init() {
   scene.add(highlightMesh);
 
   /* Trails */
-  const trail        = createTrailSystem(activeSatellites.length);
+  const trail = createTrailSystem(activeSatellites.length);
   scene.add(trail.lines);
 
-  const trailBuffers = Array.from({ length: activeSatellites.length }, () => ({
-    buf: Array.from({ length: TRAIL_LENGTH }, () => new THREE.Vector3()),
-    head: 0, filled: 0
-  }));
-  resetAllTrails(trailBuffers, trail, activeSatellites.length);
+  // Trails start off; no buffers or reset logic needed
+  window.trailsVisible  = false;
+  trail.lines.visible   = false;
 
-  window.trailsVisible = false;
-  // Trails start hidden; reset buffers so they start clean when toggled on
-  trail.lines.visible = false;
-  resetAllTrails(trailBuffers, trail, activeSatellites.length);
+  // Track which frame we last updated trails — used to throttle recomputation
+  let lastTrailUpdateMs = -Infinity;
+  const TRAIL_RECOMPUTE_INTERVAL_MS = 1000; // recompute at most once per second
 
   window.addEventListener("toggle-trails", () => {
-    window.trailsVisible    = !window.trailsVisible;
-    trail.lines.visible     =  window.trailsVisible;
-    if (window.trailsVisible) resetAllTrails(trailBuffers, trail, activeSatellites.length);
+    window.trailsVisible  = !window.trailsVisible;
+    trail.lines.visible   =  window.trailsVisible;
+    // Force immediate recompute on next frame when turned on
+    if (window.trailsVisible) lastTrailUpdateMs = -Infinity;
   });
 
   const dummy = new THREE.Object3D();
@@ -741,8 +748,6 @@ async function init() {
   const J2000_MS          = Date.UTC(2000, 0, 1, 12, 0, 0);
 
   let frameCount = 0;
-  const TRAIL_SAMPLE_EVERY  = 3;
-  const TRAIL_RESET_JUMP_MS = 5 * 60 * 1000;
 
   let lastWallMs = performance.now();
 
@@ -757,14 +762,10 @@ async function init() {
     controls.update();
     const simDelta = simState.step(wallDelta);
 
-    const isRewind   = simState.speed < 0 && !simState.paused;
-    const isJump     = Math.abs(simDelta) > TRAIL_RESET_JUMP_MS;
-    const needsReset = simState.needsTrailReset || isJump || isRewind;
-
-    // needsReset flag — individual trail resets happen per-satellite
-    // inside the loop below, with the satellite's current position,
-    // so no blanket reset is needed here.
-    if (needsReset) simState.needsTrailReset = false;
+    if (simState.needsTrailReset) {
+      lastTrailUpdateMs = -Infinity; // force recompute on next frame
+      simState.needsTrailReset = false;
+    }
 
     const now        = new Date(simState.time);
     const earthAngle = (simState.time - J2000_MS) * EARTH_ROT_RATE_MS;
@@ -772,7 +773,6 @@ async function init() {
     cloudMesh.rotation.y = earthAngle * 1.0008;
 
     frameCount++;
-    const sampleTrail = !isRewind && (frameCount % TRAIL_SAMPLE_EVERY === 0);
 
     for (let i = 0; i < activeSatellites.length; i++) {
       const pv = satellite.propagate(activeSatellites[i].satrec, now);
@@ -780,38 +780,7 @@ async function init() {
 
       const pos = satToVector(pv.position);
 
-      /* Trails */
-      if (window.trailsVisible) {
-        const tb    = trailBuffers[i];
-        const base  = i * TRAIL_LENGTH * 3;
-        const cbase = i * TRAIL_LENGTH * 4;
-
-        // On a reset frame, flood-fill this satellite's slots with its current
-        // position so all segments are degenerate (zero-length) and invisible.
-        // This eliminates any streak to the old position or to the origin.
-        if (needsReset) {
-          resetSingleTrail(tb, trail, i, pos);
-        }
-
-        // Sample a new position into the ring buffer
-        if (sampleTrail && !needsReset) {
-          tb.buf[tb.head].copy(pos);
-          tb.head = (tb.head + 1) % TRAIL_LENGTH;
-          if (tb.filled < TRAIL_LENGTH) tb.filled++;
-        }
-
-        // Write ring buffer to geometry in chronological order.
-        // Unfilled prefix slots hold the satellite's reset position (degenerate)
-        // so they are invisible — no NaN needed.
-        const start = (tb.head - tb.filled + TRAIL_LENGTH) % TRAIL_LENGTH;
-        for (let j = 0; j < TRAIL_LENGTH; j++) {
-          const idx = (start + j) % TRAIL_LENGTH;
-          trail.positions[base + j*3]   = tb.buf[idx].x;
-          trail.positions[base + j*3+1] = tb.buf[idx].y;
-          trail.positions[base + j*3+2] = tb.buf[idx].z;
-        }
-        writeTrailColors(trail.colors, cbase, tb.filled);
-      }
+      /* Trail recomputation happens outside the per-satellite loop below */
 
       /* Store world-space position for list-hover use */
       satPositions[i] = pos.clone();
@@ -835,9 +804,21 @@ async function init() {
       }
     }
 
-    satellitesMesh.instanceMatrix.needsUpdate      = true;
-    trail.geometry.attributes.position.needsUpdate = true;
-    trail.geometry.attributes.color.needsUpdate    = true;
+    satellitesMesh.instanceMatrix.needsUpdate = true;
+
+    /* Recompute trails from TLE at most once per second (or on demand).
+       Trails cover the last TRAIL_STEPS × TRAIL_STEP_MS of sim time.
+       Because positions come from TLE propagation, they are always correct
+       regardless of time jumps, rewinds, or page loads — no reset needed. */
+    if (window.trailsVisible && (simState.time - lastTrailUpdateMs > TRAIL_RECOMPUTE_INTERVAL_MS)) {
+      lastTrailUpdateMs = simState.time;
+      for (let i = 0; i < activeSatellites.length; i++) {
+        if (!visibleMask[i]) continue;
+        writeTrail(trail, i, activeSatellites[i].satrec, simState.time);
+      }
+      trail.geometry.attributes.position.needsUpdate = true;
+      trail.geometry.attributes.color.needsUpdate    = true;
+    }
 
     /* Hover card */
     raycaster.setFromCamera(mouse, camera);
