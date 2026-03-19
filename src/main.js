@@ -13,6 +13,8 @@ import { currentFilter } from "./search.js";
 
 /* --------------------------------------------------
   Load TLE data
+  Also parses NORAD ID from line 1 (chars 3-7) so we can
+  join against satcat on a stable numeric key.
 -------------------------------------------------- */
 
 async function loadTLE() {
@@ -22,73 +24,109 @@ async function loadTLE() {
   const lines = text.trim().split("\n");
   const sats = [];
   for (let i = 0; i < lines.length; i += 3) {
-    sats.push({
-      name: lines[i].trim(),
-      satrec: satellite.twoline2satrec(lines[i + 1].trim(), lines[i + 2].trim())
-    });
+    const name  = lines[i].trim();
+    const line1 = lines[i + 1].trim();
+    const line2 = lines[i + 2].trim();
+    // NORAD catalog number is columns 3-7 of line 1 (0-indexed: 2-6), left-padded with spaces
+    const noradId = parseInt(line1.substring(2, 7).trim(), 10);
+    sats.push({ name, noradId, satrec: satellite.twoline2satrec(line1, line2) });
   }
   return sats;
 }
 
 /* --------------------------------------------------
-  Load UCS Catalog
+  Name normalization + alternate-name extraction
+  (kept as fallback for satellites missing from satcat)
 -------------------------------------------------- */
 
-// Normalize a satellite name: lowercase, hyphens → spaces,
-// non-breaking spaces → spaces, collapse whitespace.
 function normalizeSatName(name) {
   return name
     .toLowerCase()
-    .replace(/ /g, " ")
+    .replace(/\u00a0/g, " ")
     .replace(/-/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-// Extract every candidate name from a "Name of Satellite, Alternate Names"
-// field (e.g. "AEHF-2 (Advanced EHF-2, USA 235)") or a TLE name
-// (e.g. "AEHF-2 (USA-235)").
-// Returns a Set of all name strings found.
 function extractAllNames(field) {
   const names = new Set();
   if (!field) return names;
-  const raw = field.replace(/ /g, " ").trim();
-
-  // Primary = everything before the first "("
+  const raw = field.replace(/\u00a0/g, " ").trim();
   const primary = raw.split("(")[0].trim();
   if (primary) names.add(primary);
-
-  // Everything inside each parenthesis group, split by comma
   const parenRe = /\(([^)]+)\)/g;
   let m;
   while ((m = parenRe.exec(raw)) !== null) {
-    m[1].split(",").forEach(part => {
-      const p = part.trim();
-      if (p) names.add(p);
-    });
+    m[1].split(",").forEach(part => { const p = part.trim(); if (p) names.add(p); });
   }
-
   return names;
 }
 
-async function loadCatalog() {
+/* --------------------------------------------------
+  Load CelesTrak satcat  (primary — keyed by NORAD ID)
+  https://celestrak.org/pub/satcat.csv
+  Columns we use:
+    NORAD_CAT_ID, OBJECT_NAME, COUNTRY, LAUNCH_DATE,
+    OBJECT_TYPE, PERIOD, APOGEE, PERIGEE
+-------------------------------------------------- */
+
+async function loadSatcat() {
+  const response = await fetch("https://celestrak.org/pub/satcat.csv");
+  const csv = await response.text();
+  const parsed = Papa.parse(csv, { header: true, skipEmptyLines: true });
+
+  const satcat = {};
+  parsed.data.forEach(row => {
+    const id = parseInt(row["NORAD_CAT_ID"], 10);
+    if (!id) return;
+
+    // Derive orbit class from period (minutes)
+    const period = parseFloat(row["PERIOD"]);
+    let orbit = "Unknown";
+    if (!isNaN(period)) {
+      if      (period <  128) orbit = "LEO";
+      else if (period < 600)  orbit = "MEO";
+      else if (period > 1400 && period < 1500) orbit = "GEO";
+      else                    orbit = "HEO";
+    }
+
+    satcat[id] = {
+      country:  (row["COUNTRY"]      || "").trim(),
+      operator: "",                          // satcat has no operator field
+      type:     (row["OBJECT_TYPE"]  || "").trim(),
+      orbit,
+      launchDate: (row["LAUNCH_DATE"] || "").trim(),
+      status:     row["DECAY_DATE"] ? "Decayed" : "Active"
+    };
+  });
+
+  return satcat;
+}
+
+/* --------------------------------------------------
+  Load UCS catalog  (secondary — adds purpose/type detail)
+  Keyed first by NORAD ID via the catalog's own NORAD column,
+  then by name as a fallback.
+-------------------------------------------------- */
+
+async function loadUCS() {
   const response = await fetch("/data/ucs_satellite_catalog.csv");
   const csv = await response.text();
   const parsed = Papa.parse(csv, { header: true, skipEmptyLines: true });
 
-  // Three lookup tiers (all map normalized strings → entry objects):
-  //   exact  — uppercased official name  (fastest, no normalization)
-  //   norm   — normalized official name  (handles hyphen/space mismatches)
-  //   alts   — normalized form of every alternate name in column 1
-  const exact = {};
-  const norm  = {};
-  const alts  = {};
+  const byNorad = {};   // NORAD ID (int) → entry
+  const exact   = {};   // uppercased official name → entry
+  const norm    = {};   // normalized name → entry
+  const alts    = {};   // normalized alternate name → entry
 
   parsed.data.forEach(row => {
     const rawName = row["Current Official Name of Satellite"];
     if (!rawName) return;
-    const name = rawName.replace(/ /g, " ").trim();
+    const name = rawName.replace(/\u00a0/g, " ").trim();
     if (!name) return;
+
+    const noradRaw = row["NORAD Number"] || row["NORAD_Number"] || row["Norad Number"] || "";
+    const noradId  = parseInt(noradRaw, 10);
 
     const entry = {
       name,
@@ -98,40 +136,29 @@ async function loadCatalog() {
       orbit:    (row["Class of Orbit"]             || "").trim()
     };
 
+    if (noradId) byNorad[noradId] = entry;
     exact[name.toUpperCase()]    = entry;
     norm[normalizeSatName(name)] = entry;
 
-    // Index every alternate name from column 1
     const altField = row["Name of Satellite, Alternate Names"] || "";
     extractAllNames(altField).forEach(n => {
       const key = normalizeSatName(n);
-      if (key && !alts[key]) alts[key] = entry; // first-write wins
+      if (key && !alts[key]) alts[key] = entry;
     });
-    // Also index the official name in alts for completeness
     const officialKey = normalizeSatName(name);
     if (officialKey && !alts[officialKey]) alts[officialKey] = entry;
   });
 
-  // lookup(tleName) — tries all three tiers in order, also splitting
-  // the TLE name on parentheses (e.g. "AEHF-2 (USA-235)" → try "AEHF-2"
-  // and "USA-235" separately).
-  function lookup(tleName) {
-    // Tier 1: exact uppercase match
+  function lookup(noradId, tleName) {
+    if (noradId && byNorad[noradId]) return byNorad[noradId];
     const upper = tleName.trim().toUpperCase();
     if (exact[upper]) return exact[upper];
-
-    // Tier 2: normalized match (hyphen/space tolerance)
     const n = normalizeSatName(tleName);
     if (norm[n]) return norm[n];
-
-    // Tier 3: extract all name variants from the TLE name string and
-    // check each one against the alts index.
-    // e.g. "AEHF-2 (USA-235)" → try "aehf 2" and "usa 235"
     for (const variant of extractAllNames(tleName)) {
       const key = normalizeSatName(variant);
       if (alts[key]) return alts[key];
     }
-
     return null;
   }
 
@@ -368,25 +395,41 @@ async function init() {
     })
   ));
 
-  /* Load Data */
-  const tleSatellites = await loadTLE();
-  const lookup = await loadCatalog();
+  /* Load Data — fetch in parallel for speed */
+  const [tleSatellites, satcat, ucsLookup] = await Promise.all([
+    loadTLE(),
+    loadSatcat(),
+    loadUCS()
+  ]);
   loadingOverlay.style.display = "none";
 
-  /* Merge metadata */
-  const MAX_SATELLITES   = 2000;
+  /* Merge metadata
+     Priority: satcat (NORAD-keyed, always current) provides country/orbit/type.
+     UCS lookup fills in operator and a richer purpose/type label where available,
+     and overrides orbit class and country if satcat has blanks. */
+  const MAX_SATELLITES = 2000;
 
   const activeSatellites = tleSatellites.slice(0, MAX_SATELLITES).map(s => {
-    const meta = lookup(s.name) || {};
+    const sc  = satcat[s.noradId]           || {};
+    const ucs = ucsLookup(s.noradId, s.name) || {};
+
+    // Country: prefer UCS (more human-readable, e.g. "USA" vs "US")
+    // Fall back to satcat, then Unknown
+    const country = ucs.country  || sc.country  || "Unknown";
+
+    // Operator: UCS only (satcat doesn't have this)
+    const operator = ucs.operator || "Unknown";
+
+    // Type/purpose: UCS has richer labels ("Communications", "Reconnaissance")
+    // satcat has "PAYLOAD" / "ROCKET BODY" / "DEBRIS" — useful when UCS is absent
+    const type = ucs.type || sc.type || "Unknown";
+
+    // Orbit: UCS class-of-orbit is authoritative when present; satcat-derived otherwise
+    const orbit = ucs.orbit || sc.orbit || "Unknown";
+
     return {
-      name: s.name, satrec: s.satrec,
-      metadata: {
-        name:     s.name,
-        country:  meta.country  || "Unknown",
-        operator: meta.operator || "Unknown",
-        type:     meta.type     || "Unknown",
-        orbit:    meta.orbit    || "Unknown"
-      }
+      name: s.name, satrec: s.satrec, noradId: s.noradId,
+      metadata: { name: s.name, country, operator, type, orbit }
     };
   });
 
