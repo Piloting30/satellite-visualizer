@@ -6,6 +6,8 @@
 import * as THREE from "three";
 import { WebGPURenderer } from "three/webgpu";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { MeshStandardNodeMaterial, MeshBasicNodeMaterial } from "three/webgpu";
+import * as TSL from "three/tsl";
 import * as satellite from "satellite.js";
 import Papa from "papaparse";
 
@@ -112,7 +114,24 @@ async function loadSatcat() {
 async function loadUCS() {
   const response = await fetch("/data/ucs_satellite_catalog.csv");
   const csv = await response.text();
-  const parsed = Papa.parse(csv, { header: true, skipEmptyLines: true });
+  // transformHeader trims whitespace and deduplicates empty/repeated column
+  // names (the UCS sheet has many blank trailing columns and 7 "Source" columns)
+  // so Papa.parse never needs to rename them and the warning is suppressed.
+  const seenHeaders = {};
+  const parsed = Papa.parse(csv, {
+    header: true,
+    skipEmptyLines: true,
+    transformHeader: h => {
+      const clean = h.trim();
+      if (!clean) return `__empty_${Object.keys(seenHeaders).length}__`;
+      if (seenHeaders[clean]) {
+        seenHeaders[clean]++;
+        return `${clean}_${seenHeaders[clean]}`;
+      }
+      seenHeaders[clean] = 1;
+      return clean;
+    }
+  });
 
   const byNorad = {};   // NORAD ID (int) → entry
   const exact   = {};   // uppercased official name → entry
@@ -351,56 +370,101 @@ async function init() {
   const clouds     = loader.load("/textures/earth_clouds_1024.png");
   const stars      = loader.load("/textures/starfield.jpg");
 
-  /* Starfield */
+  /* Starfield — MeshBasicNodeMaterial is WebGPU-compatible */
   scene.add(new THREE.Mesh(
     new THREE.SphereGeometry(100, 64, 64),
-    new THREE.MeshBasicMaterial({ map: stars, side: THREE.BackSide })
+    new MeshBasicNodeMaterial({ map: stars, side: THREE.BackSide })
   ));
 
-  /* Earth */
-  const earth = new THREE.Mesh(
-    new THREE.SphereGeometry(1, 64, 64),
-    new THREE.MeshStandardMaterial({
-      map: earthDay, emissiveMap: earthNight,
-      emissive: new THREE.Color(0xffffff), emissiveIntensity: 0.6
-    })
-  );
+  /* Earth — MeshStandardNodeMaterial required by WebGPURenderer.
+     Day texture as map; night lights blended in via emissive. */
+  const earthMat = new MeshStandardNodeMaterial();
+  earthMat.map             = earthDay;
+  earthMat.emissiveMap     = earthNight;
+  earthMat.emissive        = new THREE.Color(0xffffff);
+  earthMat.emissiveIntensity = 0.6;
+
+  const earth = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 64), earthMat);
   scene.add(earth);
 
   /* Clouds */
-  const cloudMesh = new THREE.Mesh(
-    new THREE.SphereGeometry(1.01, 64, 64),
-    new THREE.MeshStandardMaterial({ map: clouds, transparent: true, opacity: 0.8 })
-  );
+  const cloudMat = new MeshStandardNodeMaterial();
+  cloudMat.map         = clouds;
+  cloudMat.transparent = true;
+  cloudMat.opacity     = 0.8;
+
+  const cloudMesh = new THREE.Mesh(new THREE.SphereGeometry(1.01, 64, 64), cloudMat);
   scene.add(cloudMesh);
 
-  /* Atmosphere */
-  scene.add(new THREE.Mesh(
-    new THREE.SphereGeometry(1.1, 64, 64),
-    new THREE.ShaderMaterial({
-      vertexShader: `
-        varying vec3 vNormal;
-        void main(){
-          vNormal = normalize(normalMatrix * normal);
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
-        }`,
-      fragmentShader: `
-        varying vec3 vNormal;
-        void main(){
-          float intensity = pow(0.6 - dot(vNormal, vec3(0,0,1.0)), 2.0);
-          gl_FragColor = vec4(0.3,0.6,1.0,1.0) * intensity;
-        }`,
-      blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true
-    })
-  ));
+  /* Atmosphere — two-layer physically-inspired glow.
+     
+     Layer 1 (outer halo, FrontSide): the bright limb glow seen from space.
+       - viewDot = dot(normalWorld, cameraDirection) — 1.0 at center, 0.0 at limb
+       - rimFactor = 1 - viewDot  →  peaks at the limb edge
+       - raised to a high power (~4) for a thin, tight rim
+       - deep blue (0.15, 0.5, 1.0) fading to transparent at center
+     
+     Layer 2 (inner haze, FrontSide): diffuse blue tint over the dayside.
+       - softer falloff (pow ~1.5), much lower opacity
+       - slightly warmer blue-white (0.3, 0.6, 1.0) to mimic Rayleigh scattering
+  */
 
-  /* Load Data — fetch in parallel for speed */
+  // Shared: view-space dot product — how directly the surface faces the camera
+  const nWorld  = TSL.normalWorld;
+  const camDir  = TSL.normalize(TSL.cameraPosition.sub(TSL.positionWorld));
+  const viewDot = TSL.clamp(TSL.dot(nWorld, camDir), 0.0, 1.0);
+
+  // --- Outer halo ---
+  const haloMat = new MeshBasicNodeMaterial({
+    side:        THREE.FrontSide,
+    transparent: true,
+    blending:    THREE.AdditiveBlending,
+    depthWrite:  false,
+  });
+
+  // rimFactor peaks at limb (viewDot → 0), tight power for a thin bright ring
+  const haloRim      = TSL.pow(TSL.oneMinus(viewDot), TSL.float(4.5));
+  // Deep electric blue, high opacity at the rim
+  const haloColor    = TSL.vec3(0.12, 0.45, 1.0);
+  const haloAlpha    = TSL.mul(haloRim, TSL.float(0.9));
+  haloMat.colorNode  = TSL.vec4(TSL.mul(haloColor, haloRim), haloAlpha);
+
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(1.06, 64, 64), haloMat));
+
+  // --- Inner diffuse haze ---
+  const hazeMat = new MeshBasicNodeMaterial({
+    side:        THREE.FrontSide,
+    transparent: true,
+    blending:    THREE.AdditiveBlending,
+    depthWrite:  false,
+  });
+
+  // Softer falloff — covers more of the disc, not just the edge
+  const hazeRim     = TSL.pow(TSL.oneMinus(viewDot), TSL.float(1.4));
+  const hazeColor   = TSL.vec3(0.25, 0.55, 1.0);
+  const hazeAlpha   = TSL.mul(hazeRim, TSL.float(0.18));
+  hazeMat.colorNode = TSL.vec4(TSL.mul(hazeColor, hazeRim), hazeAlpha);
+
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(1.025, 64, 64), hazeMat));
+
+  /* Loading UI helpers */
+  const loadStatus  = document.getElementById("load-status");
+  const loadCounter = document.getElementById("load-counter");
+
+  function setStatus(source, done) {
+    const el = document.getElementById(`load-src-${source}`);
+    if (el) el.classList.toggle("done", done);
+  }
+
+  // Phase 1: globe renders immediately; overlay fades in after renderer is ready
+  loadingOverlay.classList.add("visible");
+
+  /* Load Data — fetch in parallel, update status as each resolves */
   const [tleSatellites, satcat, ucsLookup] = await Promise.all([
-    loadTLE(),
-    loadSatcat(),
-    loadUCS()
+    loadTLE()    .then(r => { setStatus("tle",    true); return r; }),
+    loadSatcat() .then(r => { setStatus("satcat", true); return r; }),
+    loadUCS()    .then(r => { setStatus("ucs",    true); return r; }),
   ]);
-  loadingOverlay.style.display = "none";
 
   /* Merge metadata
      Priority: satcat (NORAD-keyed, always current) provides country/orbit/type.
@@ -610,6 +674,45 @@ async function init() {
     }
   }
 
+  /* Gradual satellite reveal — add to scene in batches so they
+     appear progressively rather than all popping in at once.
+     The loading overlay fades out when the first batch is placed. */
+  const BATCH_SIZE = 100;
+  const BATCH_DELAY_MS = 20;
+  let satellitesReady = false;
+
+  async function revealSatellites() {
+    for (let start = 0; start < activeSatellites.length; start += BATCH_SIZE) {
+      const end = Math.min(start + BATCH_SIZE, activeSatellites.length);
+      for (let i = start; i < end; i++) visibleRevealMask[i] = true;
+
+      const pct = Math.round((end / activeSatellites.length) * 100);
+      loadCounter.textContent = `${end.toLocaleString()} / ${activeSatellites.length.toLocaleString()} satellites`;
+
+      // After first batch — fade out overlay, fade in UI
+      if (start === 0) {
+        loadingOverlay.classList.add("fading");
+        setTimeout(() => {
+          loadingOverlay.classList.remove("visible", "fading");
+          // Fade in all UI panels
+          document.getElementById("ui-overlay").classList.remove("ui-hidden");
+          document.getElementById("ui-overlay").classList.add("visible");
+          document.getElementById("sat-list-panel").classList.remove("ui-hidden");
+          document.getElementById("sat-list-panel").classList.add("visible");
+          document.getElementById("time-bar").classList.remove("ui-hidden");
+          document.getElementById("time-bar").classList.add("visible");
+        }, 600);
+      }
+
+      await new Promise(r => setTimeout(r, BATCH_DELAY_MS));
+    }
+    satellitesReady = true;
+  }
+
+  // Reveal mask — satellites only rendered once revealed
+  const visibleRevealMask = new Array(activeSatellites.length).fill(false);
+  revealSatellites();
+
   /* Build initial list */
   buildSatelliteList(activeSatellites, visibleMask, selectSatellite, onListHover, onListHoverEnd);
 
@@ -682,8 +785,8 @@ async function init() {
       /* Store world-space position for list-hover use */
       satPositions[i] = pos.clone();
 
-      /* Satellite dot */
-      const s = visibleMask[i] ? 1 : 0;
+      /* Satellite dot — only show once revealed during load sequence */
+      const s = (visibleMask[i] && visibleRevealMask[i]) ? 1 : 0;
       dummy.scale.set(s, s, s);
       dummy.position.copy(pos);
       dummy.updateMatrix();
