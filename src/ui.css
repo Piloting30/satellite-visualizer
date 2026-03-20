@@ -362,8 +362,93 @@ body {
   word-break: break-word;
 }
 
+/* Detail card — make it scrollable when content is tall */
+#satellite-detail-card {
+  max-height: calc(100vh - 160px);
+  display: flex;
+  flex-direction: column;
+}
+
+#detail-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+#detail-content::-webkit-scrollbar { width: 3px; }
+#detail-content::-webkit-scrollbar-track { background: transparent; }
+#detail-content::-webkit-scrollbar-thumb { background: rgba(80,140,255,0.2); border-radius: 2px; }
+
+/* Operational status badge */
+.detail-status {
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 0.08em;
+  margin-bottom: 10px;
+}
+
+/* Tab bar */
+.detail-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid rgba(80, 140, 255, 0.12);
+  padding-bottom: 6px;
+}
+
+.detail-tab {
+  flex: 1;
+  padding: 4px 8px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(100, 140, 200, 0.5);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.detail-tab:hover {
+  color: rgba(160, 200, 255, 0.8);
+  background: rgba(80, 140, 255, 0.08);
+}
+
+.detail-tab.active {
+  color: #90c0ff;
+  background: rgba(26, 95, 255, 0.18);
+  border-color: rgba(80, 160, 255, 0.3);
+}
+
+/* Panel visibility */
+.detail-panel {
+  animation: fadePanel 0.15s ease;
+}
+
+@keyframes fadePanel {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Comments block at the bottom of details panel */
+.detail-comments {
+  margin-top: 8px;
+  padding: 7px 9px;
+  background: rgba(80, 140, 255, 0.06);
+  border: 1px solid rgba(80, 140, 255, 0.1);
+  border-radius: 5px;
+  font-size: 10px;
+  color: rgba(130, 170, 230, 0.6);
+  line-height: 1.6;
+  font-style: italic;
+}
+
 #close-detail {
-  margin-top: 12px;
+  margin-top: 10px;
+  flex-shrink: 0;
   width: 100%;
   padding: 6px;
   background: rgba(80, 140, 255, 0.1);

@@ -102,13 +102,24 @@ async function loadSatcat() {
       else                    orbit = "HEO";
     }
 
+    // PAYLOAD_FLAG: "Y" = payload satellite, "N" = rocket body/debris
+    const isPayload = (row["PAYLOAD_FLAG"] || "").trim() === "Y";
+
     satcat[id] = {
-      country:  (row["COUNTRY"]      || "").trim(),
-      operator: "",                          // satcat has no operator field
-      type:     (row["OBJECT_TYPE"]  || "").trim(),
+      country:    (row["OWNER"]           || "").trim(),
+      operator:   "",
+      type:       isPayload ? "Payload" : (row["PAYLOAD_FLAG"] === "N" ? "Debris/Rocket Body" : "Unknown"),
       orbit,
-      launchDate: (row["LAUNCH_DATE"] || "").trim(),
-      status:     row["DECAY_DATE"] ? "Decayed" : "Active"
+      launchDate:  (row["LAUNCH_DATE"]    || "").trim(),
+      launchSite:  (row["LAUNCH_SITE"]    || "").trim(),
+      intlDes:     (row["INTLDES"]        || "").trim(),
+      period:      (row["PERIOD"]         || "").trim(),
+      inclination: (row["INCLINATION"]    || "").trim(),
+      apogee:      (row["APOGEE"]         || "").trim(),
+      perigee:     (row["PERIGEE"]        || "").trim(),
+      rcsSize:     (row["RCS_SIZE"]       || "").trim(),
+      opStatus:    (row["OPERATIONAL_STATUS"] || "").trim(),
+      status:      row["DECAY_DATE"] ? "Decayed" : "Active"
     };
   });
 
@@ -127,21 +138,33 @@ async function loadUCS() {
   // transformHeader trims whitespace and deduplicates empty/repeated column
   // names (the UCS sheet has many blank trailing columns and 7 "Source" columns)
   // so Papa.parse never needs to rename them and the warning is suppressed.
+  // Parse without header:true first so Papa never sees duplicate header names
+  // at all — we extract and deduplicate the header row ourselves, then
+  // re-attach it so row lookups work correctly by column name.
+  const rawParsed = Papa.parse(csv, { header: false, skipEmptyLines: true });
+  const rawHeaders = rawParsed.data[0];
+
+  // Build a deduplicated header array (same logic as before, but applied
+  // before Papa ever touches the names — no warning, no silent rename).
   const seenHeaders = {};
-  const parsed = Papa.parse(csv, {
-    header: true,
-    skipEmptyLines: true,
-    transformHeader: h => {
-      const clean = h.trim();
-      if (!clean) return `__empty_${Object.keys(seenHeaders).length}__`;
-      if (seenHeaders[clean]) {
-        seenHeaders[clean]++;
-        return `${clean}_${seenHeaders[clean]}`;
-      }
-      seenHeaders[clean] = 1;
-      return clean;
+  const cleanHeaders = rawHeaders.map(h => {
+    const clean = h.trim();
+    if (!clean) return `__empty_${Object.keys(seenHeaders).length}__`;
+    if (seenHeaders[clean]) {
+      seenHeaders[clean]++;
+      return `${clean}_${seenHeaders[clean]}`;
     }
+    seenHeaders[clean] = 1;
+    return clean;
   });
+
+  // Re-parse the data rows (skip header) with our clean header names
+  const dataRows = rawParsed.data.slice(1);
+  const parsed = {
+    data: dataRows.map(row =>
+      Object.fromEntries(cleanHeaders.map((h, i) => [h, row[i] ?? ""]))
+    )
+  };
 
   const byNorad = {};   // NORAD ID (int) → entry
   const exact   = {};   // uppercased official name → entry
@@ -159,10 +182,23 @@ async function loadUCS() {
 
     const entry = {
       name,
-      country:  (row["Country of Operator/Owner"] || "").trim(),
-      operator: (row["Operator/Owner"]             || "").trim(),
-      type:     (row["Purpose"]                    || "").trim(),
-      orbit:    (row["Class of Orbit"]             || "").trim()
+      country:        (row["Country of Operator/Owner"] || "").trim(),
+      operator:       (row["Operator/Owner"]             || "").trim(),
+      users:          (row["Users"]                      || "").trim(),
+      type:           (row["Purpose"]                    || "").trim(),
+      detailedType:   (row["Detailed Purpose"]           || "").trim(),
+      orbit:          (row["Class of Orbit"]             || "").trim(),
+      orbitType:      (row["Type of Orbit"]              || "").trim(),
+      launchDate:     (row["Date of Launch"]             || "").trim(),
+      launchSite:     (row["Launch Site"]                || "").trim(),
+      launchVehicle:  (row["Launch Vehicle"]             || "").trim(),
+      launchMass:     (row["Launch Mass (kg.)"]          || "").trim(),
+      lifetime:       (row["Expected Lifetime (yrs.)"]   || "").trim(),
+      contractor:     (row["Contractor"]                 || "").trim(),
+      inclination:    (row["Inclination (degrees)"]      || "").trim(),
+      apogee:         (row["Apogee (km)"]                || "").trim(),
+      perigee:        (row["Perigee (km)"]               || "").trim(),
+      comments:       (row["Comments"]                   || "").trim(),
     };
 
     if (noradId) byNorad[noradId] = entry;
@@ -554,6 +590,7 @@ async function init() {
      Priority: satcat (NORAD-keyed, always current) provides country/orbit/type.
      UCS lookup fills in operator and a richer purpose/type label where available,
      and overrides orbit class and country if satcat has blanks. */
+
   const MAX_SATELLITES = 2000;
 
   const activeSatellites = tleSatellites.slice(0, MAX_SATELLITES).map(s => {
@@ -574,9 +611,45 @@ async function init() {
     // Orbit: UCS class-of-orbit is authoritative when present; satcat-derived otherwise
     const orbit = ucs.orbit || sc.orbit || "Unknown";
 
+    // Operational status label
+    const opStatusMap = { "+": "Operational", "-": "Non-operational",
+      "P": "Partially operational", "B": "Backup", "S": "Spare",
+      "X": "Extended mission", "D": "Decayed", "?": "Unknown" };
+    const opStatus = opStatusMap[sc.opStatus] || sc.opStatus || "";
+
+    // Launch date: prefer UCS (formatted), fall back to satcat
+    const launchDateRaw = ucs.launchDate || sc.launchDate || "";
+    const launchDate = launchDateRaw
+      ? launchDateRaw.split(" ")[0].split("T")[0]  // strip time component
+      : "";
+
     return {
       name: s.name, satrec: s.satrec, noradId: s.noradId,
-      metadata: { name: s.name, country, operator, type, orbit }
+      metadata: {
+        name:          s.name,
+        noradId:       s.noradId,
+        country,
+        operator,
+        users:         ucs.users         || "",
+        type,
+        detailedType:  ucs.detailedType  || "",
+        orbit,
+        orbitType:     ucs.orbitType     || "",
+        inclination:   ucs.inclination   || sc.inclination  || "",
+        apogee:        ucs.apogee        || sc.apogee       || "",
+        perigee:       ucs.perigee       || sc.perigee      || "",
+        period:        sc.period         || "",
+        launchDate,
+        launchSite:    ucs.launchSite    || sc.launchSite   || "",
+        launchVehicle: ucs.launchVehicle || "",
+        launchMass:    ucs.launchMass    || "",
+        lifetime:      ucs.lifetime      || "",
+        rcsSize:       sc.rcsSize        || "",
+        opStatus,
+        intlDes:       sc.intlDes        || "",
+        contractor:    ucs.contractor    || "",
+        comments:      ucs.comments      || "",
+      }
     };
   });
 
@@ -638,19 +711,109 @@ async function init() {
     const sat  = activeSatellites[idx];
     const meta = sat.metadata;
 
-    // Detail card
     const card    = document.getElementById("satellite-detail-card");
     const content = document.getElementById("detail-content");
+
+    // Only render a row if value is non-empty and not "Unknown"
+    function row(label, value) {
+      if (!value || value === "Unknown") return "";
+      return `<div class="detail-row"><span>${label}</span><span>${value}</span></div>`;
+    }
+
+    // Format launch date: strip time, convert "2019-12-11" → "11 Dec 2019"
+    function fmtDate(raw) {
+      if (!raw) return "";
+      const d = new Date(raw.split(" ")[0] + "T00:00:00Z");
+      if (isNaN(d)) return raw;
+      return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+    }
+
+    // Round numeric string to nearest integer
+    function fmtKm(v) {
+      const n = parseFloat(v);
+      return isNaN(n) ? v : Math.round(n).toString();
+    }
+
+    function fmtDeg(v) {
+      const n = parseFloat(v);
+      return isNaN(n) ? v : n.toFixed(1) + "°";
+    }
+
+    function fmtMin(v) {
+      const n = parseFloat(v);
+      return isNaN(n) ? v : n.toFixed(1) + " min";
+    }
+
+    // Altitude range: "418 – 421 km"
+    const alt = (meta.perigee || meta.apogee)
+      ? (meta.perigee && meta.apogee
+          ? `${fmtKm(meta.perigee)} – ${fmtKm(meta.apogee)} km`
+          : `${fmtKm(meta.apogee || meta.perigee)} km`)
+      : "";
+
+    // Orbit summary: "LEO · 51.6°"
+    const orbitSummary = [meta.orbit, meta.inclination ? fmtDeg(meta.inclination) : ""]
+      .filter(Boolean).join(" · ");
+
+    // Operational status colour
+    const opColor = {
+      "Operational":          "#3ddc7a",
+      "Non-operational":      "#ff6b6b",
+      "Partially operational":"#ffd166",
+      "Backup":               "#90c0ff",
+      "Spare":                "#90c0ff",
+    }[meta.opStatus] || "rgba(160,190,255,0.5)";
+
     content.innerHTML = `
       <div class="detail-name">${sat.name}</div>
-      <div class="detail-row"><span>Country</span><span>${meta.country}</span></div>
-      <div class="detail-row"><span>Operator</span><span>${meta.operator}</span></div>
-      <div class="detail-row"><span>Type</span><span>${meta.type}</span></div>
-      <div class="detail-row"><span>Orbit</span><span>${meta.orbit}</span></div>
-    `;
-    card.classList.remove("hidden");
 
-    // Highlight ring
+      <div class="detail-tabs">
+        <button class="detail-tab active" data-tab="overview">Overview</button>
+        <button class="detail-tab" data-tab="technical">Technical</button>
+      </div>
+
+      <!-- OVERVIEW: high-value fields -->
+      <div class="detail-panel" data-panel="overview">
+        ${meta.opStatus ? `<div class="detail-status" style="color:${opColor}">● ${meta.opStatus}</div>` : ""}
+        ${row("NORAD ID",    meta.noradId)}
+        ${row("Country",     meta.country)}
+        ${row("Operator",    meta.operator)}
+        ${row("Users",       meta.users)}
+        ${row("Purpose",     meta.detailedType || meta.type)}
+        ${row("Orbit",       orbitSummary)}
+        ${row("Altitude",    alt)}
+        ${row("Launch Date", fmtDate(meta.launchDate))}
+        ${row("Status",      meta.opStatus)}
+      </div>
+
+      <!-- TECHNICAL: medium + low value fields -->
+      <div class="detail-panel hidden" data-panel="technical">
+        ${row("Launch Site",     meta.launchSite)}
+        ${row("Launch Vehicle",  meta.launchVehicle)}
+        ${row("Launch Mass",     meta.launchMass ? parseFloat(meta.launchMass).toLocaleString() + " kg" : "")}
+        ${row("Exp. Lifetime",   meta.lifetime ? meta.lifetime + " yrs" : "")}
+        ${row("Contractor",      meta.contractor)}
+        ${row("Period",          fmtMin(meta.period))}
+        ${row("Inclination",     fmtDeg(meta.inclination))}
+        ${row("Apogee",          meta.apogee  ? fmtKm(meta.apogee)  + " km" : "")}
+        ${row("Perigee",         meta.perigee ? fmtKm(meta.perigee) + " km" : "")}
+        ${row("RCS Size",        meta.rcsSize)}
+        ${row("COSPAR",          meta.intlDes)}
+        ${meta.comments ? `<div class="detail-comments">${meta.comments}</div>` : ""}
+      </div>
+    `;
+
+    // Tab switching
+    content.querySelectorAll(".detail-tab").forEach(tab => {
+      tab.addEventListener("click", () => {
+        content.querySelectorAll(".detail-tab").forEach(t => t.classList.remove("active"));
+        content.querySelectorAll(".detail-panel").forEach(p => p.classList.add("hidden"));
+        tab.classList.add("active");
+        content.querySelector(`[data-panel="${tab.dataset.tab}"]`).classList.remove("hidden");
+      });
+    });
+
+    card.classList.remove("hidden");
     highlightMesh.material.opacity = 1.0;
   }
 
